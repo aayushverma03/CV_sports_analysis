@@ -11,30 +11,32 @@ Maximum number of alternating foot taps in a fixed time. Measures lower-limb cyc
 
 ## 2. Equipment & setup
 
-Two markers / mats spaced by ~30 cm. Camera side-on or top-down.
+A football placed on the ground. Camera side-on or top-down with both feet
+and the ball in frame.
 
 ## 3. Protocol
 
-1. Athlete stands on one foot, taps alternately between two markers as fast as possible
-2. Fixed duration (typically 10 s)
-3. Total taps counted
+1. Athlete stands over the ball
+2. Taps the ball alternately with each foot as fast as possible
+3. Fixed duration (typically 10 s)
+4. Total taps counted
 
 ## 4. CV pipeline requirements
 
 | Capability | Required? | Notes |
 |---|---|---|
 | Player detection + tracking | yes | |
-| Pose estimation | yes | |
-| Ball detection + tracking | no | |
+| Pose estimation | yes | ankles (15 left, 16 right) for tap classification |
+| Ball detection + tracking | yes | COCO `sports_ball` (no custom training v1) |
 | Cone detection | no | |
-| Calibration | optional | |
-| Event detection | — | tap events (foot contacts marker), test start, test end |
+| Calibration | optional | not needed; counts only |
+| Event detection | — | tap event = ankle keypoint within proximity of ball centre, then leaves; left vs right by which ankle was closer at contact |
 
 ## 5. Metrics produced
 
 See `docs/metrics/METRICS_CATALOG.md` for formulas and units.
 
-**Coordination:** `total_taps`, `taps_per_second`, `left_taps`, `right_taps`
+**Coordination:** `total_taps`, `taps_per_second` (benchmarked), `left_taps`, `right_taps` (informational, not benchmarked)
 
 **Validity (universal):** `pose_confidence_low_pct`, `calibration_quality`, `tracking_id_drops`, `frames_athlete_offscreen_pct`
 

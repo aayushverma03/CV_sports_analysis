@@ -1,0 +1,17 @@
+# Training config for medicine_ball_v1 detector.
+#
+# Source dataset: karunakar-reddy-ruymd/medicine-balls-pwpff v1 (Roboflow Universe)
+# CC BY 4.0. 1004 images (878 train / 87 valid / 39 test), single class `ball`.
+#
+# Run:  uv run scripts/train_yolo.py --config configs/training/medicine_ball_v1.yaml
+
+detector_name: medicine_ball_v1
+dataset_yaml: data/_labelling/community/medicine_ball_v1/data.yaml
+base_model: yolo26n.pt
+
+epochs: 100
+imgsz: 640
+batch: 16
+patience: 20
+device: auto
+seed: 0

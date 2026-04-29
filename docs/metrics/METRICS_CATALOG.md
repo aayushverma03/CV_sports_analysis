@@ -145,10 +145,10 @@ with visual sanity check.
 
 | metric_id | definition | applies to |
 |---|---|---|
-| `total_taps` | Count of foot taps in the fixed test window (10 s default). | `foot_tapping` |
+| `total_taps` | Count of foot-on-ball taps in the fixed test window (10 s default). A tap = ankle keypoint within proximity threshold of ball centre, then leaves. | `foot_tapping` |
 | `taps_per_second` | `total_taps / window_duration_s`. | `foot_tapping` |
-| `left_taps` | Count restricted to left-foot taps. | `foot_tapping` |
-| `right_taps` | Count restricted to right-foot taps. | `foot_tapping` |
+| `left_taps` | Count restricted to left-foot (ankle 15) taps. **Informational, not benchmarked.** | `foot_tapping` |
+| `right_taps` | Count restricted to right-foot (ankle 16) taps. **Informational, not benchmarked.** | `foot_tapping` |
 
 ---
 
@@ -177,8 +177,8 @@ foot/knee/head keypoint. Hand catches and double-bounces both end the streak.
 
 | metric_id | definition | applies to |
 |---|---|---|
-| `successful_passes` | Count of passes that hit the target zone within the 30 s window. | `wall_pass` |
-| `passing_accuracy_percent` | `successful_passes / total_attempts × 100`. An "attempt" is any pass release toward the wall. | `wall_pass` |
+| `successful_passes` | Count of complete pass-rebound-recontrol cycles within the 30 s window. A "cycle" = athlete strikes ball toward wall + ball returns + athlete recontrols (ball stays within their control radius). No target zone; no detection of where on the wall the ball landed. | `wall_pass` |
+| `passing_accuracy_percent` | `successful_passes / total_pass_releases × 100`. An "attempt" is any pass release toward the wall; "successful" means the athlete recovered the rebound. | `wall_pass` |
 | `average_decision_time_s` | Mean time from ball reception (foot stops ball) to next pass release. | `wall_pass` |
 | `average_pass_velocity_ms` | Mean ball speed during the post-release window across all passes. | `wall_pass` |
 | `max_pass_velocity_ms` | Max single-pass release velocity. | `wall_pass` |
@@ -241,3 +241,5 @@ Computed by the family base class. Surface in the metrics JSON under a
 - `body_approach_angle_deg` removed from dribbling tests; kept only for `wall_pass`.
 - Bangsbo (7×34.2m) had ball metrics in earlier drafts — removed, no ball in this variant.
 - LESS, Sit-and-Reach, Stepwise Core Stability, Single-Leg Hop, 30-15 Intermittent, Cooper, DFB Agility, Incremental Ramp, DFB Shooting → all metrics for these tests deferred from v1 (kept on disk in earlier drafts under old names; not implemented in v1).
+- **Foot Tapping setup updated** — earlier drafts assumed two ground markers / mats. Final protocol: athlete taps a stationary ball, alternating feet. No `foot_tap_mat` custom class; ball detected via COCO `sports_ball`.
+- **Wall Pass `passing_accuracy_percent` redefined** — earlier drafts required a wall target zone polygon. Final protocol has **no target detection**; accuracy = rebound-recovery success rate. Drops the `wall_target_zone` custom detector entirely.

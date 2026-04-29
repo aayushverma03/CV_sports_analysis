@@ -16,6 +16,11 @@ data/*
 !data/.gitkeep
 outputs/*
 !outputs/.gitkeep
+logs/
+
+# Model weights that escape models/ (e.g. Ultralytics auto-download to cwd)
+*.pt
+*.onnx
 
 # Secrets
 .env

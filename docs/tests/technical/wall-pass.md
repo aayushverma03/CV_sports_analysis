@@ -4,21 +4,21 @@
 **Family**: skill
 **Status**: active
 **Window**: fixed 30 s
-**Required setup**: wall distance and target-zone polygon must be configured at run-time (without these, accuracy is undefined)
+**Required setup**: wall distance configured at run-time (calibration). **No target zone** — accuracy is rebound-recovery-based, not target-hit-based.
 
 ## 1. Purpose
 
-Repeated passes against a wall, receiving and passing again. Measures passing accuracy + first-touch control speed.
+Repeated passes against a wall, receiving and passing again. Measures passing rate, control speed, and rebound-recovery success.
 
 ## 2. Equipment & setup
 
-Wall, target zone marked on it. Athlete stands behind a marked line at fixed distance. Football.
+Wall and a football. Athlete stands behind a marked line at a fixed distance from the wall (per protocol config).
 
 ## 3. Protocol
 
-1. Athlete passes ball to wall target
+1. Athlete passes ball to the wall
 2. Receives rebound, controls, passes again
-3. Counts successful passes within fixed duration
+3. Cycles repeat for fixed duration; failed rebound recoveries (ball escapes) do not count toward `successful_passes`
 
 ## 4. CV pipeline requirements
 
@@ -28,8 +28,8 @@ Wall, target zone marked on it. Athlete stands behind a marked line at fixed dis
 | Pose estimation | yes | |
 | Ball detection + tracking | yes | |
 | Cone detection | no | |
-| Calibration | mandatory (wall distance) | |
-| Event detection | — | pass releases, ball-wall contacts, receptions |
+| Calibration | mandatory (wall distance — known marker, not detected) | |
+| Event detection | — | pass releases, ball-wall contacts (rebound start), receptions, recovery success / failure (ball under athlete's control vs ball escapes) |
 
 ## 5. Metrics produced
 
