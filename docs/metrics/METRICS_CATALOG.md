@@ -38,7 +38,7 @@ Movement primitives derived from athlete tracking.
 
 | metric_id | definition | applies to |
 |---|---|---|
-| `total_completion_time_s` | Time from start gate to end gate (`(end_frame − start_frame) / fps`). | All timed tests except `yo_yo`, `multistage`, `wall_pass` (fixed-duration), `foot_tapping` (fixed-duration), `juggling` (open-ended) |
+| `total_completion_time_s` | Time from **test-start event** to **test-end event** (`(end_frame − start_frame) / fps`). The test-start event is per-test, defined in each spec's §3 (e.g. CMJ = countermovement onset; Linear Sprint = torso crosses start gate). The HUD elapsed-time clock anchors to the same event — never to video frame 0. | All timed tests except `yo_yo`, `multistage`, `wall_pass` (fixed-duration), `foot_tapping` (fixed-duration), `juggling` (open-ended) |
 | `total_distance_m` | Cumulative path length of athlete COM in world coordinates: `Σ ||p[i+1] − p[i]||`. | All movement tests |
 | `average_speed_ms` | `total_distance_m / total_completion_time_s`. | All movement tests |
 | `max_speed_ms` | Max of Savitzky-Golay-smoothed speed series. | All movement tests |

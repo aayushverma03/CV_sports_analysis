@@ -21,6 +21,12 @@ Side-on camera at hip height, full body in frame, plain wall background preferre
 3. Jumps vertically as high as possible
 4. Lands on same spot
 
+The pipeline must auto-detect:
+- **Test-start event**: countermovement onset — hip-midpoint (mean of left+right hip keypoints) downward y-velocity exceeds threshold (e.g. 0.3 m/s, smoothed). The HUD elapsed-time clock and all metric windows count from this event, **not** from video frame 0.
+- **Takeoff**: toe leaves ground (ankle keypoint y-velocity flips upward, foot off-floor)
+- **Peak**: hip-midpoint reaches max height
+- **Landing**: toe contact (ankle y stops rising and stabilises near start baseline)
+
 ## 4. CV pipeline requirements
 
 | Capability | Required? | Notes |

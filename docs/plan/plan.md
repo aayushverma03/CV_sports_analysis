@@ -288,7 +288,7 @@ so each Phase 4 session is small.
 | 3.1 | `src/tests/base.py` | `BaseTest`, `AthleteProfile`, `AnalysisResult` |
 | 3.2 | `src/tests/families/sprint_family.py` | gates, splits, peak accel, max speed shared logic |
 | 3.3 | `src/tests/families/agility_family.py` | cone layout, COD detection |
-| 3.4 | `src/tests/families/jump_family.py` | flight/contact time, takeoff/landing pose; loads `pose_biomech` (RTMPose) |
+| 3.4 | `src/tests/families/jump_family.py` | flight/contact time, takeoff/landing pose; loads `pose_biomech` (RTMPose). Shared `detect_movement_onset(pose_series)` helper — tracks hip-midpoint y-velocity, returns the frame at which the test "really starts" (countermovement). All jump metrics and the HUD elapsed-time clock anchor to this event, not video frame 0. Per-test specs in §3 declare the exact onset signal. |
 | 3.5 | `src/tests/families/dribbling_family.py` | touches, ball-foot distance, completion time |
 | 3.6 | `src/tests/families/endurance_family.py` | distance, pacing, stage; audio-beep alignment + visual shuttle counting |
 | 3.7 | `src/tests/families/throw_family.py` | release biomech, projectile trajectory, distance; loads `pose_biomech` |
