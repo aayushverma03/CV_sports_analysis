@@ -1,0 +1,28 @@
+# Training config for cone_v1 detector.
+#
+# Source dataset: itcyolo-twxhs/cone-w0avt v1 (Roboflow Universe), CC BY 4.0.
+# Original dataset had 3 classes (cone, motorcycle, powerbox); normalized to
+# single class `cone` via scripts/normalize_dataset.py (motorcycle / powerbox
+# bboxes stripped, images with no surviving cone removed).
+# Final: 1460 images (1329 train / 28 valid / 103 test).
+#
+# Note: train/valid/test ratio is unusually train-heavy (~91/1.8/7.4) from
+# the upstream split. mAP estimates from the small valid set will be noisy,
+# but training itself is well-supplied with examples.
+#
+# v1 covers traffic cones only. The user's videos also contain flat marker
+# disks (red/green) and yellow slalom poles — those need own-labelled frames
+# folded in for v2 (see docs/models/COMMUNITY_MODELS.md "cones" section).
+#
+# Run:  uv run scripts/train_yolo.py --config configs/training/cone_v1.yaml
+
+detector_name: cone_v1
+dataset_yaml: data/_labelling/community/cone_v1/data.yaml
+base_model: yolo26n.pt
+
+epochs: 100
+imgsz: 640
+batch: 16
+patience: 20
+device: auto
+seed: 0
