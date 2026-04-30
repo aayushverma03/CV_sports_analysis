@@ -28,6 +28,14 @@ from src.scoring.normalization import Band, normalise, score_to_band
 Gender = Literal["M", "F", "X"]
 
 
+class ProtocolError(RuntimeError):
+    """Video does not match the test protocol (wrong duration, missing event)."""
+
+
+class DetectionError(RuntimeError):
+    """Required entity (player, ball, cones, ...) not found in the video."""
+
+
 @dataclass(frozen=True)
 class AthleteProfile:
     """The athlete the analysis is being run for.
@@ -149,6 +157,15 @@ class BaseTest(ABC):
 
     @abstractmethod
     def run(
-        self, video_path: Path, athlete: AthleteProfile
+        self,
+        video_path: Path,
+        athlete: AthleteProfile,
+        output_dir: Path,
     ) -> AnalysisResult:
-        """Execute the pipeline and return the final result."""
+        """Execute the pipeline and return the final result.
+
+        `output_dir` is a caller-owned directory (per CONVENTIONS:
+        only `src/api/`, `src/ui/`, and `scripts/` may write to
+        `outputs/`). Pipelines write the annotated `.mp4` and any
+        per-run artifacts under it; the caller mkdir's it first.
+        """

@@ -77,7 +77,7 @@ def test_basetest_subclass_runs_end_to_end(tmp_path):
     class FakeSprint(BaseTest):
         test_id = "linear-sprint"
 
-        def run(self, video_path, athlete):
+        def run(self, video_path, athlete, output_dir):
             metrics = {
                 "time_10m_s": MetricValue(raw=2.4, unit="s"),
                 "time_20m_s": MetricValue(raw=4.1, unit="s"),
@@ -91,12 +91,12 @@ def test_basetest_subclass_runs_end_to_end(tmp_path):
                 metrics=metrics,
                 scores=scores,
                 test_score=test_score,
-                annotated_video_path=tmp_path / "out.mp4",
+                annotated_video_path=output_dir / "out.mp4",
                 diagnostics=AnalysisDiagnostics(fps_input=30.0, duration_s=6.0),
             )
 
     athlete = AthleteProfile(gender="M", age=18)
-    result = FakeSprint().run(Path("dummy.mp4"), athlete)
+    result = FakeSprint().run(Path("dummy.mp4"), athlete, tmp_path)
 
     assert result.test_id == "linear-sprint"
     assert result.athlete is athlete
