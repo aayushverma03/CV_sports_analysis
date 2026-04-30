@@ -10,7 +10,7 @@ sized for solo, strictly-sequential work.
 
 The program is complete when:
 
-1. All **21 CV-pipeline tests** (15 Physical + 5 Technical) produce,
+1. All **20 CV-pipeline tests** (15 Physical + 5 Technical) produce,
    end-to-end:
    - an annotated `.mp4` (skeleton, bbox, gates/markers, HUD ticker, end-card)
    - a metrics JSON validated against `docs/api/API_SPEC.md`
@@ -35,10 +35,10 @@ The program is complete when:
 | Capacity model | "items can be parallelised inside a phase" | **Solo, strictly sequential** | User decision |
 | Object-training data | (unspecified) | User-provided test videos under `data/<domain>/<test>/` + Roboflow labelling | User decision |
 | Benchmarks ingestion | "author YAML files" | User-provided **CSV → YAML converter** in `scripts/` | User will supply CSV; converter produces canonical YAML |
-| Test scope | 32 tests | **21 CV-pipeline tests** (15 Physical + 5 Technical) | Drop the 3 cognitive tests (in-app games), the 8 tests with no sample video, and LESS (single-camera scoring is partial). Deferred list documented in `ROADMAP.md` |
+| Test scope | 32 tests | **20 CV-pipeline tests** (15 Physical + 5 Technical) | Drop the 3 cognitive tests (in-app games), the 8 tests with no sample video, and LESS (single-camera scoring is partial). Deferred list documented in `ROADMAP.md` |
 
 The following files reference the old decisions and must be edited as part
-of session 0.1: `README.md` (model bumps + scope 32 → 21 CV tests + dropped
+of session 0.1: `README.md` (model bumps + scope 32 → 20 CV tests + dropped
 tests moved to deferred), `ARCHITECTURE.md` (family list drops Cognitive and
 Mobility), `CLAUDE.md`, `docs/models/MODEL_REGISTRY.md` (add `pose_biomech`
 RTMPose-ONNX entry alongside YOLO26-pose), `docs/ai_summary/AI_SUMMARY_SPEC.md`,
@@ -75,7 +75,7 @@ Phase 2   Metric library
 Phase 3   Test family base classes
    |
    v
-Phase 4   21 test pipelines (one at a time)
+Phase 4   20 test pipelines (one at a time)
    |
    v
 Phase 5   Annotation polish
@@ -197,7 +197,7 @@ the detection format YOLO needs).
 
 | # | Session | Deliverable |
 |---|---|---|
-| 0.5.1 | Inventory custom classes from all 21 CV tests | `docs/models/CUSTOM_CLASSES.md` listing every non-COCO object |
+| 0.5.1 | Inventory custom classes from all 20 CV tests | `docs/models/CUSTOM_CLASSES.md` listing every non-COCO object |
 | 0.5.2 | Roboflow Universe search per class | `docs/models/COMMUNITY_MODELS.md` recording per-class result; registry entries for any community model that passes a smoke test on a held-out clip from `data/` |
 | 0.5.3 | `scripts/extract_frames.py` | samples 1 fps from `data/` into `data/_labelling/extracted_frames/` |
 | 0.5.4 | Roboflow project setup (manual) for classes not covered by Tier 1 | one project per class group; export format = YOLO; ingest extracted frames + any Tier 3 reference images present in `data/_labelling/reference_images/<class>/` |
@@ -242,7 +242,7 @@ in Phase 2.
 
 ## 8. Phase 2 — Metric library
 
-**Goal.** Pure functions for every metric the 21 CV tests need.
+**Goal.** Pure functions for every metric the 20 CV tests need.
 
 ### Design notes
 
@@ -297,7 +297,7 @@ so each Phase 4 session is small.
 
 ---
 
-## 10. Phase 4 — 21 test pipelines (one per session)
+## 10. Phase 4 — 20 test pipelines (one per session)
 
 **Goal.** End-to-end implementation of each test.
 
@@ -317,7 +317,7 @@ so each Phase 4 session is small.
 
 **Quick wins:** 4.1 Linear Sprint · 4.2 Counter Movement Jump · 4.3 Drop Jump · 4.4 Straight Line Dribbling · 4.5 Juggling · 4.6 Foot Tapping
 
-**Agility family:** 4.7 T-Test · 4.8 Illinois Agility · 4.9 45-Second Agility Hurdle Jump · 4.10 5×10m Sprint with COD
+**Agility family:** 4.7 T-Test · 4.8 Illinois Agility · 4.9 5×10m Sprint with COD
 
 **Jump family:** 4.11 Squat Jump · 4.12 Standing Long Jump
 
@@ -332,7 +332,7 @@ so each Phase 4 session is small.
 **Mobility / Posture:** 4.21 LESS (subset score)
 
 **Out of v1 scope** (deferred):
-30-15 Intermittent, Cooper, DFB Agility, Hurdle Agility Run (replaced by 45-Second variant), Incremental Ramp, Single-Leg Hop, Sit-and-Reach, Stepwise Core Stability, DFB Shooting, Reaction Time, Pattern Recognition, Video-Based Decision-Making.
+30-15 Intermittent, 45-Second Agility Hurdle Jump (no test-protocol video), Cooper, DFB Agility, Hurdle Agility Run (replaced by 45-Second variant), Incremental Ramp, Single-Leg Hop, Sit-and-Reach, Stepwise Core Stability, DFB Shooting, Reaction Time, Pattern Recognition, Video-Based Decision-Making.
 
 ---
 

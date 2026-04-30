@@ -7,7 +7,23 @@ from src.core.models import registry as reg
 
 
 def test_registry_keys():
-    assert set(reg.REGISTRY) == {"object_detector", "pose_default", "pose_biomech"}
+    expected = {
+        "object_detector",
+        "pose_default",
+        "pose_biomech",
+        "detector_medicine_ball_v1",
+        "detector_plyo_box_v1",
+    }
+    assert set(reg.REGISTRY) == expected
+
+
+def test_custom_detectors_have_expected_metadata():
+    for key in ("detector_medicine_ball_v1", "detector_plyo_box_v1"):
+        spec = reg.get_spec(key)
+        assert spec.backend == "ultralytics"
+        assert spec.weights.startswith("custom/")
+        assert "classes" in spec.extras
+        assert "val_mAP50" in spec.extras
 
 
 def test_get_spec_returns_modelspec():

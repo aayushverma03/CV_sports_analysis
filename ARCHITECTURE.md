@@ -78,7 +78,7 @@ exposes them as a tabbed UI. Neither should contain analysis logic.
 | Family | Shared primitives | Tests |
 |---|---|---|
 | Sprint | gates, splits, peak accel, max speed | Linear Sprint · 5×10 COD · Repeated Sprint Ability · Bangsbo (7×34.2m) |
-| Agility | cone layout, COD detection, completion time, splits, hurdle clearance | T-Test · Illinois · 45-Second Agility Hurdle Jump |
+| Agility | cone layout, COD detection, completion time, splits | T-Test · Illinois |
 | Jump | flight time, contact time, pose at takeoff/landing (uses `pose_biomech`) | CMJ · Drop Jump · Squat Jump · Standing Long Jump |
 | Dribble | touches, ball–foot distance, completion time | Straight Line · Zig-Zag · Figure of 8 |
 | Endurance | distance covered, pacing, stage reached, audio-beep alignment | Yo-Yo (IR2) · Multistage |
@@ -86,12 +86,13 @@ exposes them as a tabbed UI. Neither should contain analysis logic.
 | Skill | discrete action counting, accuracy zones, ball control | Juggling · Foot Tapping · Wall Pass |
 | Mobility / Posture | static / quasi-static joint angles (uses `pose_biomech`) | LESS (subset score) |
 
-The CV pipeline covers eight families across 21 tests. Tests deferred from
+The CV pipeline covers eight families across 20 tests. Tests deferred from
 v1 (awaiting data, or psychological/cognitive games shipping separately):
-30-15 Intermittent, Cooper, DFB Agility, Hurdle Agility Run (replaced by
-45-Second variant), Incremental Ramp, Single-Leg Hop, Sit-and-Reach,
-Stepwise Core Stability, DFB Shooting, Reaction Time, Pattern Recognition,
-Video-Based Decision-Making.
+30-15 Intermittent, 45-Second Agility Hurdle Jump (no test-protocol video
+available), Cooper, DFB Agility, Hurdle Agility Run (replaced by 45-Second
+variant), Incremental Ramp, Single-Leg Hop, Sit-and-Reach, Stepwise Core
+Stability, DFB Shooting, Reaction Time, Pattern Recognition, Video-Based
+Decision-Making.
 
 ## Concurrency model
 

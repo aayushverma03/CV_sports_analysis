@@ -62,6 +62,43 @@ REGISTRY: dict[str, ModelSpec] = {
             ),
         },
     ),
+    "detector_medicine_ball_v1": ModelSpec(
+        name="medicine_ball_v1",
+        weights="custom/medicine_ball_v1.pt",
+        backend="ultralytics",
+        version="1.0.0",
+        extras={
+            "task": "detect",
+            "classes": ["ball"],
+            "confidence_default": 0.35,
+            "iou_default": 0.45,
+            "trained_on": "data/_labelling/community/medicine_ball_v1/data.yaml",
+            "val_mAP50": 0.811,
+        },
+    ),
+    "detector_plyo_box_v1": ModelSpec(
+        name="plyo_box_v1",
+        weights="custom/plyo_box_v1.pt",
+        backend="ultralytics",
+        version="1.0.0",
+        extras={
+            "task": "detect",
+            "classes": ["plyo_box"],
+            # Smoke-tested: 1/10 frames at conf=0.25, 10/10 at conf=0.10.
+            # Model sees the box but is shy on it. Lowering threshold; combined
+            # with NMS this is acceptable for the well-bounded box class.
+            "confidence_default": 0.10,
+            "iou_default": 0.45,
+            "trained_on": "data/_labelling/community/plyo_box_v1/data.yaml",
+            "val_mAP50": 0.859,
+            "notes": "Trained on 30 images. Detection signal exists but low confidence on out-of-distribution frames. Extend dataset (~150-200 instances) for production v1.",
+        },
+    ),
+    # detector_hurdle_v1 deregistered: the only v1 test that consumed it
+    # (45-Second Agility Hurdle Jump) was deferred. Weights stay on disk at
+    # models/custom/hurdle_v1.pt; dataset stays at
+    # data/_labelling/community/hurdle_v1/. Re-add this entry in v1.1 once
+    # the test reactivates with a fresh 200-400 instance dataset.
 }
 
 

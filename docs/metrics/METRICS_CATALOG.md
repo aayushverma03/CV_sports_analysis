@@ -18,18 +18,22 @@ this catalog — they do **not** redefine formulas.
 - All metrics return `float` scalars or small typed dicts; no DataFrames.
 - All time-series inputs are `numpy.ndarray` plus `fps: float`.
 
-## v1 test scope (21 tests)
+## v1 test scope (20 tests)
 
 For brevity, the "Applies to" column uses these short names:
 
 **Sprint family**: `linear_sprint`, `5x10_cod`, `bangsbo` (7×34.2m), `rsa`
-**Agility family**: `t_test`, `illinois`, `45-second-agility-hurdle-jump`
+**Agility family**: `t_test`, `illinois`
 **Jump family**: `cmj`, `drop_jump`, `squat_jump`, `slj` (Standing Long Jump)
 **Endurance family**: `yo_yo` (IR2), `multistage`
 **Throw family**: `med_ball`
 **Dribbling family**: `straight_dribble`, `figure_8`, `zigzag`
 **Skill family**: `wall_pass`, `juggling`, `foot_tapping`
 **Mobility / Posture family**: `less` (subset score)
+
+Deferred from v1: `45-second-agility-hurdle-jump` (no test-protocol video).
+Metric `total_successful_jumps` and `failed_clearance_count` rows below stay
+in the catalog for v1.1 reactivation.
 
 ---
 

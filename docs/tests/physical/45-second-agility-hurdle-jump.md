@@ -2,9 +2,9 @@
 
 **Domain**: physical
 **Family**: agility
-**Status**: active
+**Status**: deferred (out of v1 scope — no clean test-protocol video available; ships in v1.1+ when athlete-recorded footage arrives)
 **Window**: fixed 45 s
-**Replaces**: hurdle-agility-run (deferred to v1.1+)
+**Replaces**: hurdle-agility-run (also deferred)
 
 ## 1. Purpose
 

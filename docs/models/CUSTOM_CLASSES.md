@@ -13,7 +13,7 @@ the multi-class model can't hit usable accuracy.
 | Class | Used by | # tests | Priority | Tier 1 (Roboflow Universe) likelihood | Notes |
 |---|---|---|---|---|---|
 | **cones** | Linear Sprint, 5×10m COD, Bangsbo, RSA, T-Test, Illinois, Yo-Yo, Multistage, Straight Line Dribble, Figure of 8, Zig-Zag | 11 | **highest** | partial — see notes | User uses **4 distinct marker types**: orange traffic cones (tall), green flat dome markers, red flat dome markers, and yellow slalom poles. Trained as a single `cone` class on mixed data (community traffic-cone dataset + own-labelled disks + poles). Downstream test logic uses position only, not type. |
-| **hurdles** | 45-Second Agility Hurdle Jump | 1 | medium | medium (athletics hurdles datasets exist) | Mini-hurdles 15–30 cm (12-inch / SPARQ standard); clearance detection needs side-on visibility |
+| **hurdles** | (none in v1 — 45-Second Agility Hurdle Jump deferred) | 0 | medium | medium (athletics hurdles datasets exist) | Mini-hurdles 15–30 cm (12-inch / SPARQ standard). Class kept in custom-detector pool for v1.1 reactivation when athlete-recorded test footage arrives. |
 | **plyo_box** | Drop Jump | 1 | low | low (gym datasets sparse) | Wooden / plastic box, 30/40/50 cm typical |
 | **medicine_ball** | Medicine Ball Throw | 1 | low | medium (gym fitness datasets) | Distinct from `sports_ball` (COCO) — larger, single-colour, textured. Train separately so YOLO doesn't conflate them |
 
@@ -43,7 +43,6 @@ acceptable.
 | Repeated Sprint Ability | cones | person |
 | T-Test | cones | person |
 | Illinois Agility | cones | person |
-| 45-Second Agility Hurdle Jump | hurdles | person |
 | CMJ | (none — flight time, no calibration markers) | person |
 | Drop Jump | plyo_box | person |
 | Squat Jump | (none) | person |
