@@ -14,8 +14,17 @@ def test_registry_keys():
         "detector_medicine_ball_v1",
         "detector_plyo_box_v1",
         "detector_cone_v1",
+        "detector_open_vocab_v1",
     }
     assert set(reg.REGISTRY) == expected
+
+
+def test_open_vocab_detector_has_default_classes():
+    spec = reg.get_spec("detector_open_vocab_v1")
+    assert spec.backend == "yoloworld"
+    assert "default_classes" in spec.extras
+    assert isinstance(spec.extras["default_classes"], list)
+    assert len(spec.extras["default_classes"]) > 0
 
 
 def test_custom_detectors_have_expected_metadata():

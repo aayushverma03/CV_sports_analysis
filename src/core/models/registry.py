@@ -13,7 +13,7 @@ from typing import Any, Literal
 ROOT = Path(__file__).resolve().parents[3]
 MODELS_DIR = ROOT / "models"
 
-Backend = Literal["ultralytics", "onnx"]
+Backend = Literal["ultralytics", "onnx", "yoloworld"]
 
 
 @dataclass(frozen=True)
@@ -118,6 +118,31 @@ REGISTRY: dict[str, ModelSpec] = {
             "notes": "Traffic cones only. Tests using flat marker disks (Linear Sprint, Illinois) or slalom poles (Zig-Zag) will need v2 with extended dataset.",
         },
     ),
+    "detector_open_vocab_v1": ModelSpec(
+        name="yolo-world-v2",
+        weights="yolov8x-worldv2.pt",
+        backend="yoloworld",
+        version="2.0.0",
+        extras={
+            "task": "detect",
+            # Default prompts — calibration-marker vocabulary used by sprint
+            # and agility tests. Per-test pipelines may override via
+            # MarkerDetector(prompts=...). Flat dome markers (red/green) are
+            # absent: YOLO-World does not pick them up with text prompts —
+            # cone_v2 is the planned fix for that gap (Phase 8.6).
+            "default_classes": [
+                "orange traffic cone",
+                "training cone",
+                "yellow slalom pole",
+            ],
+            "confidence_default": 0.10,
+            "iou_default": 0.45,
+            "notes": (
+                "POC results: traffic cones high conf (0.4-0.76), slalom "
+                "poles moderate (0.10-0.45), flat dome markers undetected."
+            ),
+        },
+    ),
     # detector_hurdle_v1 deregistered: the only v1 test that consumed it
     # (45-Second Agility Hurdle Jump) was deferred. Weights stay on disk at
     # models/custom/hurdle_v1.pt; dataset stays at
@@ -154,6 +179,16 @@ def get_model(key: str) -> Any:
         from ultralytics import YOLO
 
         return YOLO(str(spec.path))
+    if spec.backend == "yoloworld":
+        from ultralytics import YOLOWorld
+
+        model = YOLOWorld(str(spec.path))
+        # Set the default class vocabulary; pipelines can override via
+        # `model.set_classes([...])` before calling predict.
+        default_classes = spec.extras.get("default_classes")
+        if default_classes:
+            model.set_classes(list(default_classes))
+        return model
     if spec.backend == "onnx":
         import onnxruntime as ort
 
