@@ -1,0 +1,26 @@
+test_id: counter-movement-jump
+display_name: "Counter Movement Jump (CMJ)"
+
+aggregation:
+  method: weighted_mean
+  weights:
+    jump_height_cm: 0.7
+    flight_time_s:  0.3
+
+metrics:
+  jump_height_cm:
+    direction: higher_is_better
+    unit: cm
+    male:    { P: 50, E: 60, A: 70, L: 75 }
+    female:  { P: 35, E: 45, A: 55, L: 60 }
+
+  flight_time_s:
+    direction: higher_is_better
+    unit: s
+    male:    { P: 0.639, E: 0.700, A: 0.756, L: 0.780 }
+    female:  { P: 0.535, E: 0.606, A: 0.670, L: 0.700 }
+
+metadata:
+  source: "User-provided thresholds, soccer U17-U23"
+  confidence: high
+  last_updated: 2026-04-30

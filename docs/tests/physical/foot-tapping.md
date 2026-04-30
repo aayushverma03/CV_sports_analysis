@@ -3,7 +3,7 @@
 **Domain**: physical
 **Family**: skill
 **Status**: active
-**Window**: fixed 10 s
+**Window**: fixed 30 s
 
 ## 1. Purpose
 
@@ -18,7 +18,7 @@ and the ball in frame.
 
 1. Athlete stands over the ball
 2. Taps the ball alternately with each foot as fast as possible
-3. Fixed duration (typically 10 s)
+3. Fixed duration (30 s)
 4. Total taps counted
 
 ## 4. CV pipeline requirements

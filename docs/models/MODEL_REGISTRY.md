@@ -68,8 +68,10 @@ Two pose backends, both first-class:
   throw/skill families.
 - **`pose_biomech` (RTMPose-x)** — higher keypoint AP than YOLO-pose,
   particularly under occlusion and at unusual joint configurations. Used by
-  the **jump family** (CMJ, Drop Jump, Squat Jump, Standing Long Jump) and
-  the **throw family** (Medicine Ball Throw — release biomechanics).
+  the **jump family** (CMJ, Drop Jump, Squat Jump, Standing Long Jump),
+  the **throw family** (Medicine Ball Throw — release biomechanics), the
+  **mobility family** (LESS subset scoring), and the **45-Second Agility
+  Hurdle Jump** (clearance-height precision).
 
 Selection happens in the family base class, not in test code:
 

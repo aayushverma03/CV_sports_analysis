@@ -1,4 +1,4 @@
-# `yo-yo-intermittent` — Yo-Yo Intermittent Recovery Test
+# `yo-yo-intermittent` — Yo-Yo Intermittent Recovery Test (IR2)
 
 **Domain**: physical
 **Family**: endurance
@@ -13,9 +13,13 @@ Progressive shuttle test with recovery jogging between sprints; specific to foot
 
 20 m shuttle marked by cones, 5 m recovery zone behind start cone. Audio cues for pace.
 
-## 3. Protocol
+## 3. Protocol — Yo-Yo IR2
 
-1. Athlete completes 2 × 20 m shuttle at audio-cued pace
+Variant locked: **Intermittent Recovery Test, Level 2 (IR2)** — starting speed
+13 km/h, faster progression than IR1. More demanding; appropriate for elite /
+high-level football populations (which is our target).
+
+1. Athlete completes 2 × 20 m shuttle at audio-cued pace (starting at IR2 speeds)
 2. 10 s active recovery jog through 5 m zone
 3. Pace increases at each level until athlete fails to reach the line on the cue (twice)
 

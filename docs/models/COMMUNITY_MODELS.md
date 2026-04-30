@@ -68,12 +68,14 @@ of disks/poles only — community handles traffic cones).
 **Verdict: Tier 2 (fine-tune our own from extracted frames).**
 
 Search returned no athletics-mini-hurdle datasets. The "Show Jumping" hits
-were equestrian (horse jumps), not relevant. Hurdle Agility Run uses small
-15–30 cm hurdles which are specific enough that labelling our own clips is
-faster than scouring Universe.
+were equestrian (horse jumps), not relevant. The 45-Second Agility Hurdle
+Jump (which replaces Hurdle Agility Run in v1) uses one 12-inch / 30 cm
+SPARQ-standard mini-hurdle — specific enough that labelling our own clips
+is faster than scouring Universe.
 
-Recommended next step: Phase 0.5.4 — label our `Hurdle-Agility-Run` videos
-in Roboflow. Target 200–400 hurdle instances for v1.
+Recommended next step: Phase 0.5.4 — label hurdle instances from the
+`45-Second Agility Hurdle Jump` sample video and any other clips we add.
+Target 200–400 hurdle instances for v1.
 
 ### plyo_box
 

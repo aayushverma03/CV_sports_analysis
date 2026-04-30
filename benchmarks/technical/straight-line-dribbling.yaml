@@ -1,0 +1,47 @@
+test_id: straight-line-dribbling
+display_name: "Straight Line Dribbling"
+
+aggregation:
+  method: weighted_mean
+  weights:
+    total_completion_time_s: 0.50
+    touches_per_metre:       0.20
+    ball_foot_distance_m:    0.20
+    control_loss_events:     0.10
+
+metrics:
+  total_completion_time_s:
+    # Default 30 m course; users running other distances should override.
+    direction: lower_is_better
+    unit: s
+    male:    { P: 7.0, E: 6.0, A: 5.2, L: 4.7 }
+    female:  { P: 8.0, E: 7.0, A: 6.2, L: 5.7 }
+
+  touches_per_metre:
+    # Lower = better control at speed (fewer steering nudges).
+    direction: lower_is_better
+    unit: count_per_m
+    male:    { P: 1.5, E: 1.0, A: 0.6, L: 0.4 }
+    female:  { P: 1.6, E: 1.1, A: 0.7, L: 0.5 }
+
+  ball_foot_distance_m:
+    direction: lower_is_better
+    unit: m
+    male:    { P: 0.8, E: 0.6, A: 0.4, L: 0.3 }
+    female:  { P: 0.8, E: 0.6, A: 0.4, L: 0.3 }
+
+  control_loss_events:
+    direction: lower_is_better
+    unit: count
+    male:    { P: 3, E: 2, A: 1, L: 0 }
+    female:  { P: 3, E: 2, A: 1, L: 0 }
+
+metadata:
+  source: |
+    Indicative ranges from soccer slalom/dribble research: elite ~15.5 s vs
+    nonelite ~18.3 s on modified Illinois with ball (Reilly 2008); Top League
+    20.2 s vs amateur 21.4 s on speed-dribble courses (Ostojic 2006). Adapted
+    to a 30 m straight-line variant. No peer-reviewed normative percentiles
+    available for the straight-line variant specifically.
+  confidence: provisional
+  last_updated: 2026-04-30

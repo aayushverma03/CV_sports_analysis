@@ -92,10 +92,11 @@ if the model overshoots.
 ## Prompt template structure
 
 Templates live in `src/ai_summary/templates/<family>.md`. One per CV family —
-**seven** total: sprint, agility, jump, dribbling, endurance, throw, skill —
-**not** one per test. Test-specific nuance comes through the input JSON, not
-by forking the template. Cognitive tests, LESS, Sit-and-Reach, and Stepwise
-Core Stability are out of v1 CV scope and have no template here.
+**eight** total: sprint, agility, jump, dribbling, endurance, throw, skill,
+mobility (LESS only) — **not** one per test. Test-specific nuance comes
+through the input JSON, not by forking the template. Cognitive tests,
+Sit-and-Reach, and Stepwise Core Stability are out of v1 CV scope and have
+no template here.
 
 A template has four blocks:
 

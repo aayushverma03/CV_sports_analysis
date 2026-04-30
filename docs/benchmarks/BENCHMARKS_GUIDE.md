@@ -1,10 +1,13 @@
 # Benchmarks Guide
 
-Benchmarks are reference distributions of expected performance values, broken
-down by gender and age band, used to convert raw metric values into 0–100
-scores. They live as YAML files under `benchmarks/`.
+Benchmarks are the reference values used to convert raw metric outputs into
+0–100 scores via `docs/scoring/NORMALIZATION.md`. They live as YAML files
+under `benchmarks/`.
 
-## File layout
+## Lookup key
+
+Three dimensions: `(test_id, metric_id, gender)`. **Age band is not part of
+the v1 lookup** — see the locked decision in `docs/plan/plan.md` §2.
 
 ```
 benchmarks/
@@ -12,132 +15,175 @@ benchmarks/
 │   ├── linear-sprint.yaml
 │   ├── counter-movement-jump.yaml
 │   └── ...
-├── technical/
-│   └── ...
-└── cognitive/
+└── technical/
+    ├── figure-of-8-dribbling.yaml
     └── ...
 ```
 
-One file per `test_id`. The filename matches the test ID exactly.
+One file per `test_id`; the filename matches the test ID exactly (kebab-case).
 
 ## Schema
 
 ```yaml
 test_id: linear-sprint
-display_name: "Linear Sprint (10/20/30 m)"
-score_direction: lower_is_better      # lower_is_better | higher_is_better | target_value
-units:
-  total_completion_time: s
-  split_10m: s
-  split_20m: s
-  split_30m: s
-  max_speed: m/s
+display_name: "Linear Sprint (10/20/30/40 m)"
 
-# Optional aggregation rule that combines per-metric scores
-# into a single test-level score. If omitted, default = mean of metric scores.
+# Optional aggregation rule that combines per-metric scores into a single
+# test-level score. If omitted, defaults to `mean` over all metrics.
 aggregation:
   method: weighted_mean
   weights:
-    total_completion_time: 0.4
-    max_speed: 0.3
-    split_10m: 0.15
-    split_20m: 0.15
+    time_10m_s: 0.25
+    time_20m_s: 0.25
+    time_30m_s: 0.25
+    time_40m_s: 0.25
 
-age_bands:
-  - U12
-  - U14
-  - U16
-  - U18
-  - U23
-  - Senior
+metrics:
+  time_10m_s:
+    direction: lower_is_better
+    unit: s
+    male:    { P: 2.4, E: 2.1, A: 1.8, L: 1.6 }
+    female:  { P: 2.6, E: 2.3, A: 2.0, L: 1.8 }
+  time_20m_s:
+    direction: lower_is_better
+    unit: s
+    male:    { P: 4.1, E: 3.6, A: 3.1, L: 2.7 }
+    female:  { P: 4.4, E: 3.9, A: 3.4, L: 3.0 }
+  # ...
 
-# The actual norms.
-# Each entry: gender × age_band × metric_id → distribution stats.
-benchmarks:
-  M:
-    U12:
-      total_completion_time: { p10: 5.40, p50: 5.10, p90: 4.75 }
-      split_10m:              { p10: 2.05, p50: 1.95, p90: 1.85 }
-      split_20m:              { p10: 3.55, p50: 3.40, p90: 3.20 }
-      split_30m:              { p10: 5.40, p50: 5.10, p90: 4.75 }
-      max_speed:              { p10: 5.8,  p50: 6.4,  p90: 7.0 }
-    # ... U14, U16, U18, U23, Senior
-  F:
-    U12:
-      total_completion_time: { p10: 5.80, p50: 5.45, p90: 5.10 }
-      # ...
+metadata:
+  source: "User-provided benchmarks (DFB U17–U19 testing battery, 2022)"
+  confidence: high          # high | medium | low | provisional
+  last_updated: 2026-04-30
 ```
 
-## Distribution representation
+## Threshold semantics
 
-Three percentiles is the minimum viable spec: **p10, p50 (median), p90**. The
-normaliser interpolates between these to produce a 0–100 score.
+Per metric, per gender, four numbers:
 
-If you have richer data, you can replace the `{p10, p50, p90}` block with:
+- **P** — Poor threshold (boundary between Poor and Expected bands)
+- **E** — Expected threshold
+- **A** — Above-Expected threshold
+- **L** — Elite threshold
 
-```yaml
-total_completion_time:
-  mean: 5.10
-  std: 0.18
-  source: "Internal cohort 2024-2025 (N=420)"
-```
+Direction-dependent ordering — must be enforced when YAML is loaded:
 
-The normaliser handles both forms — see `docs/scoring/NORMALIZATION.md`.
+- `higher_is_better`: `P < E < A < L`
+- `lower_is_better`: `P > E > A > L`
+
+A loader that finds violations raises `BenchmarkSchemaError`. A scorer that
+gets a missing `(test, metric, gender)` triple raises `BenchmarkLookupError`.
 
 ## Gender
 
-Use ISO codes: `M`, `F`. Add `X` (non-binary / unspecified) only if you have
-evidence-based norms; do not invent them by averaging M and F.
+Use lowercase keys: `male`, `female`. Add `unspecified` only if you have
+evidence-based norms for that group; do not invent them by averaging the
+binary genders. If an athlete profile is `unspecified` and no benchmark
+exists, raise `BenchmarkLookupError`.
 
-## Age bands
+## Aggregation: from metric to test, subarea, area
 
-Default bands are youth-football oriented (U12, U14, U16, U18, U23, Senior).
-Override per test if the protocol's source uses different bands (e.g. Cooper
-test has its own age-decade bands — document in the test spec).
+Three rollup levels:
 
-If an athlete falls outside all bands, the scorer falls back to the closest
-band and emits a `WARNING` with a `band_extrapolated: true` flag in the
-result JSON.
+1. **Metric scores → test score** — declared in each benchmark file's
+   `aggregation:` block (default: `mean`).
+2. **Test scores → subarea score** — declared once, in
+   `benchmarks/_aggregation.yaml`.
+3. **Subarea scores → area score** — same file.
 
-## Score direction modes
-
-- **`lower_is_better`** — sprint times, completion times, reaction times. p10 (slowest 10%) → score ~10; p90 (fastest 10%) → score ~90.
-- **`higher_is_better`** — jump heights, distances, throw distances, max speed. p10 (worst 10%) → score ~10; p90 (best 10%) → score ~90.
-- **`target_value`** — for tests where deviation in either direction is bad (e.g. trunk lean angle in a specific range). Specify a `target` field and a `tolerance`.
+### Aggregation weights (locked v1)
 
 ```yaml
-score_direction: target_value
-target: 0          # zero asymmetry is the goal
-tolerance: 15      # full score within ±15%, linearly degrading to ±30%
+# benchmarks/_aggregation.yaml
+
+areas:
+  foundation:                      # Physical Capabilities
+    speed_agility:        0.35
+    strength_power:       0.30
+    endurance:            0.20
+    mobility_stability:   0.15
+  technical:
+    dribbling:            0.45
+    passing:              0.35
+    ball_control:         0.20
+
+subareas:
+  speed_agility:
+    linear-sprint:                   0.20
+    5x10m-sprint-cod:                0.18
+    repeated-sprint-ability:         0.14
+    illinois-agility:                0.12
+    t-test:                          0.12
+    bangsbo-sprint:                  0.12
+    45-second-agility-hurdle-jump:   0.07     # replaces hurdle-agility-run
+    foot-tapping:                    0.05
+  strength_power:
+    counter-movement-jump:           0.30
+    drop-jump:                       0.22
+    squat-jump:                      0.18
+    standing-long-jump:              0.18
+    medicine-ball-throw:             0.12
+  endurance:
+    yo-yo-intermittent:              0.60
+    multistage-fitness:              0.40
+  mobility_stability:
+    landing-error-scoring-system:    1.00
+  dribbling:
+    zig-zag-dribbling:               0.40
+    figure-of-8-dribbling:           0.35
+    straight-line-dribbling:         0.25
+  passing:
+    wall-pass:                       1.00
+  ball_control:
+    juggling:                        1.00
 ```
+
+Each subarea's weights must sum to 1.0; same for areas. The loader validates
+this on startup.
 
 ## Sourcing data
 
-Every benchmark file should declare its data source:
+Every benchmark file declares its source:
 
 ```yaml
 metadata:
-  source: "DFB U17–U19 testing battery, 2022 cohort"
-  sample_size: 1240
-  confidence: high   # high | medium | low | provisional
-  last_updated: 2025-09-01
+  source: "User-provided thresholds, soccer-specific U17–U23 norms"
+  confidence: high          # high | medium | low | provisional
+  last_updated: 2026-04-30
 ```
 
-Provisional benchmarks are usable but the AI summary should not give them
-strong narrative weight — see `docs/ai_summary/AI_SUMMARY_SPEC.md`.
+Confidence levels:
+
+- `high` — published academic norms or large internal cohort
+- `medium` — coaching-association norms, smaller cohort, or extrapolated within
+  one age band
+- `low` — single-source heuristic
+- `provisional` — first-pass values, expected to be refined; the AI summary
+  softens narrative weight ("preliminary indication") when the benchmark is
+  provisional
 
 ## Lookups (what the scoring layer does)
 
-Given `(test_id, metric_id, gender, age_at_test)`:
+Given `(test_id, metric_id, gender, raw_value)`:
 
 1. Open `benchmarks/<domain>/<test_id>.yaml`
-2. Resolve age to an age band (use the test file's `age_bands`)
-3. Index `benchmarks[gender][age_band][metric_id]`
-4. Pass distribution + score direction to `src/scoring/normalization.py`
+2. Look up `metrics[metric_id][gender]` → `{P, E, A, L}`
+3. Look up `metrics[metric_id][direction]` → `lower_is_better` / `higher_is_better`
+4. Pass to `normalise()` per `docs/scoring/NORMALIZATION.md`
 
 Implementation: `src/scoring/benchmarks.py`.
 
 ## Worked example
 
 See `benchmarks/physical/linear-sprint.yaml` — that file is the reference
-implementation of this schema and should be kept in lockstep with this guide.
+implementation of this schema and is kept in lockstep with this guide.
+
+## Adding a new benchmark
+
+1. Confirm the metric exists in `docs/metrics/METRICS_CATALOG.md` with the
+   canonical `metric_id` you'll reference here.
+2. Create or extend `benchmarks/<domain>/<test_id>.yaml` with the four
+   thresholds per gender.
+3. Add an aggregation entry to `_aggregation.yaml` if this is the first
+   test in its subarea.
+4. Run `tests/unit/scoring/` to confirm the loader validates correctly.

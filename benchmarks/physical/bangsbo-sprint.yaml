@@ -1,0 +1,29 @@
+test_id: bangsbo-sprint
+display_name: "Bangsbo Sprint Test (7 × 34.2 m)"
+
+aggregation:
+  method: weighted_mean
+  weights:
+    total_completion_time_s: 0.6
+    pct_sprint_decrement:    0.4
+
+metrics:
+  total_completion_time_s:
+    direction: lower_is_better
+    unit: s
+    male:    { P: 51.63, E: 49.66, A: 47.69, L: 45.72 }
+    female:  { P: 56.50, E: 54.13, A: 51.80, L: 49.50 }
+
+  pct_sprint_decrement:
+    # User benchmark labelled "Fatigue Index (%)". Mapped to canonical
+    # pct_sprint_decrement (Glaister formula); see METRICS_CATALOG.md.
+    # Numerical values are close enough across formulas for v1.
+    direction: lower_is_better
+    unit: pct
+    male:    { P: 8.67, E: 4.67, A: 2.50, L: 1.00 }
+    female:  { P: 9.50, E: 5.67, A: 3.50, L: 1.50 }
+
+metadata:
+  source: "User-provided thresholds, soccer U17-U23"
+  confidence: high
+  last_updated: 2026-04-30

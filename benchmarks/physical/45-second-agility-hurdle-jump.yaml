@@ -1,0 +1,14 @@
+test_id: 45-second-agility-hurdle-jump
+display_name: "45-Second Agility Hurdle Jump Test"
+
+metrics:
+  total_successful_jumps:
+    direction: higher_is_better
+    unit: count
+    male:    { P: 40, E: 50, A: 68, L: 75 }
+    female:  { P: 35, E: 42, A: 58, L: 65 }
+
+metadata:
+  source: "User-provided thresholds + SPARQ-derived norms (Nike, 2008)"
+  confidence: high
+  last_updated: 2026-04-30

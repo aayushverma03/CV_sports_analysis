@@ -1,0 +1,14 @@
+test_id: figure-of-8-dribbling
+display_name: "Figure of 8 Dribbling"
+
+metrics:
+  total_completion_time_s:
+    direction: lower_is_better
+    unit: s
+    male:    { P: 10.5, E: 9.5,  A: 8.5, L: 7.0 }
+    female:  { P: 11.5, E: 10.5, A: 9.5, L: 8.0 }
+
+metadata:
+  source: "User-provided thresholds, soccer U17-U23"
+  confidence: high
+  last_updated: 2026-04-30

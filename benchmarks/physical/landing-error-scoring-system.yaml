@@ -1,0 +1,24 @@
+test_id: landing-error-scoring-system
+display_name: "Landing Error Scoring System (LESS) — subset score"
+
+# v1 ships an 8-item subset of the 17-item LESS rubric (single-camera limit;
+# see docs/tests/physical/landing-error-scoring-system.md). Thresholds below
+# are scaled proportionally from Padua's 17-item cutoffs (5 errors = high
+# injury risk) for the 8-item subset, with female scores adjusted +1 error
+# per the meta-analytic mean difference (Padua et al. 2009; Smith et al. 2018).
+
+metrics:
+  less_error_score:
+    direction: lower_is_better
+    unit: count
+    male:    { P: 4, E: 3, A: 2, L: 1 }
+    female:  { P: 5, E: 4, A: 3, L: 2 }
+
+metadata:
+  source: |
+    Padua DA et al. (2009). The Landing Error Scoring System (LESS) is a valid
+    and reliable clinical assessment tool of jump-landing biomechanics. AJSM 37(10).
+    Subset thresholds derived by proportional scaling from full-rubric cutoffs.
+    Female adjustment from Brown TN et al. (2018), J Athletic Training 53(9).
+  confidence: medium
+  last_updated: 2026-04-30

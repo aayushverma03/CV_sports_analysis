@@ -2,7 +2,7 @@
 
 **Domain**: physical
 **Family**: mobility
-**Status**: deferred (out of v1 scope — single-camera scoring only covers ~8/17 LESS items reliably; revisit when multi-angle capture is available)
+**Status**: active (v1 ships a SUBSET score — single-camera reliably covers ~8 of 17 LESS items, enough for the Mobility & Stability subarea contribution. Document which items we score in this spec as Phase 4 work proceeds)
 
 ## 1. Purpose
 

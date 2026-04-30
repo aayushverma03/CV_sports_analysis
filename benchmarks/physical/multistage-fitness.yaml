@@ -1,0 +1,14 @@
+test_id: multistage-fitness
+display_name: "Multistage Fitness Test (Bleep / Beep Test)"
+
+metrics:
+  final_speed_level:
+    direction: higher_is_better
+    unit: level
+    male:    { P: 7.2, E: 10.1, A: 13.1, L: 15.0 }
+    female:  { P: 5.8, E: 8.6,  A: 12.7, L: 14.0 }
+
+metadata:
+  source: "User-provided thresholds, soccer U17-U23"
+  confidence: high
+  last_updated: 2026-04-30

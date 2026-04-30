@@ -1,0 +1,27 @@
+test_id: foot-tapping
+display_name: "Foot Tapping Test (30 s)"
+
+aggregation:
+  # total_taps and taps_per_second are derivable from each other
+  # (taps_per_second = total_taps / 30). Score on whichever the user-facing
+  # report cares about; mean keeps both visible without double-weighting
+  # because they collapse to the same percentile anyway.
+  method: mean
+
+metrics:
+  total_taps:
+    direction: higher_is_better
+    unit: count
+    male:    { P: 60, E: 75,   A: 90,   L: 100 }
+    female:  { P: 54, E: 68,   A: 81,   L: 90 }
+
+  taps_per_second:
+    direction: higher_is_better
+    unit: hz
+    male:    { P: 2.0, E: 2.5,  A: 3.0,  L: 3.33 }
+    female:  { P: 1.8, E: 2.25, A: 2.7,  L: 3.0 }
+
+metadata:
+  source: "User-provided thresholds, soccer U17-U23"
+  confidence: high
+  last_updated: 2026-04-30

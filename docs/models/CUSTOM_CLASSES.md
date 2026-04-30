@@ -12,8 +12,8 @@ the multi-class model can't hit usable accuracy.
 
 | Class | Used by | # tests | Priority | Tier 1 (Roboflow Universe) likelihood | Notes |
 |---|---|---|---|---|---|
-| **cones** | Linear Sprint, 5×10m COD, Bangsbo, RSA, T-Test, Illinois, Yo-Yo, Multistage, Straight Line Dribble, Figure of 8, Zig-Zag, Hurdle Agility (start/finish) | 12 | **highest** | partial — see notes | User uses **4 distinct marker types**: orange traffic cones (tall), green flat dome markers, red flat dome markers, and yellow slalom poles. Trained as a single `cone` class on mixed data (community traffic-cone dataset + own-labelled disks + poles). Downstream test logic uses position only, not type. |
-| **hurdles** | Hurdle Agility Run | 1 | medium | medium (athletics hurdles datasets exist) | Mini-hurdles 15–30 cm; collision detection needs side-on visibility |
+| **cones** | Linear Sprint, 5×10m COD, Bangsbo, RSA, T-Test, Illinois, Yo-Yo, Multistage, Straight Line Dribble, Figure of 8, Zig-Zag | 11 | **highest** | partial — see notes | User uses **4 distinct marker types**: orange traffic cones (tall), green flat dome markers, red flat dome markers, and yellow slalom poles. Trained as a single `cone` class on mixed data (community traffic-cone dataset + own-labelled disks + poles). Downstream test logic uses position only, not type. |
+| **hurdles** | 45-Second Agility Hurdle Jump | 1 | medium | medium (athletics hurdles datasets exist) | Mini-hurdles 15–30 cm (12-inch / SPARQ standard); clearance detection needs side-on visibility |
 | **plyo_box** | Drop Jump | 1 | low | low (gym datasets sparse) | Wooden / plastic box, 30/40/50 cm typical |
 | **medicine_ball** | Medicine Ball Throw | 1 | low | medium (gym fitness datasets) | Distinct from `sports_ball` (COCO) — larger, single-colour, textured. Train separately so YOLO doesn't conflate them |
 
@@ -23,8 +23,9 @@ the multi-class model can't hit usable accuracy.
 
 ### `sports_objects_v1.pt` — single multi-class detector
 4 classes: `cones`, `hurdles`, `plyo_box`, `medicine_ball`. One inference
-call per frame. Classes mostly never co-occur (only Hurdle Agility uses both
-cones and hurdles), so class imbalance during training is acceptable.
+call per frame. The 4 classes never co-occur (cones/hurdles/plyo_box/medicine_ball
+all live in distinct test settings), so class imbalance during training is
+acceptable.
 
 ### Use COCO as-is
 - **person** — every test
@@ -42,7 +43,7 @@ cones and hurdles), so class imbalance during training is acceptable.
 | Repeated Sprint Ability | cones | person |
 | T-Test | cones | person |
 | Illinois Agility | cones | person |
-| Hurdle Agility Run | cones, hurdles | person |
+| 45-Second Agility Hurdle Jump | hurdles | person |
 | CMJ | (none — flight time, no calibration markers) | person |
 | Drop Jump | plyo_box | person |
 | Squat Jump | (none) | person |

@@ -5,20 +5,21 @@ test, extracts quantitative performance metrics, normalises each metric to a 0�
 score against gender- and age-banded benchmarks, returns an annotated video, and
 generates a coach-facing AI summary.
 
-## Scope (20 CV-pipeline tests across 2 domains)
+## Scope (21 CV-pipeline tests across 2 domains)
 
-**Physical Capabilities (15)**
-5×10m Sprint with COD · Bangsbo Sprint (7×34.2m) · Counter Movement Jump · Drop Jump · Foot Tapping
-Hurdle Agility Run · Illinois Agility · Linear Sprint (10/20/30/40m) · Medicine Ball Throw
-Multistage Fitness · Repeated Sprint Ability · Squat Jump · Standing Long Jump · T-Test · Yo-Yo Intermittent
+**Physical Capabilities (16)**
+45-Second Agility Hurdle Jump · 5×10m Sprint with COD · Bangsbo Sprint (7×34.2m) · Counter Movement Jump
+Drop Jump · Foot Tapping · Illinois Agility · Landing Error Scoring System (LESS, subset) · Linear Sprint (10/20/30/40m)
+Medicine Ball Throw · Multistage Fitness · Repeated Sprint Ability · Squat Jump · Standing Long Jump
+T-Test · Yo-Yo Intermittent (IR2)
 
 **Technical Skills (5)**
 Figure of 8 Dribbling · Juggling · Straight Line Dribbling · Wall Pass · Zig-Zag Dribbling
 
 **Out of v1 scope (deferred — awaiting data or future ship):**
-30-15 Intermittent, Cooper, DFB Agility, Incremental Ramp, Single-Leg Hop, Sit-and-Reach,
-Stepwise Core Stability, DFB Shooting, Landing Error Scoring System (LESS), and the 3
-Psychological & Cognitive tests (Pattern Recognition, Reaction Time, Video-Based Decision-Making)
+30-15 Intermittent, Cooper, DFB Agility, Hurdle Agility Run (replaced by 45-Second variant),
+Incremental Ramp, Single-Leg Hop, Sit-and-Reach, Stepwise Core Stability, DFB Shooting, and
+the 3 Psychological & Cognitive tests (Pattern Recognition, Reaction Time, Video-Based Decision-Making)
 which ship later as in-app games.
 
 ## Outputs (per analysis)
@@ -45,7 +46,7 @@ which ship later as in-app games.
 ```
 sports-perf-analysis/
 ├── docs/             # Specs Claude Code reads to implement features
-│   ├── tests/        # One spec per test (20 files)
+│   ├── tests/        # One spec per test (21 files)
 │   ├── metrics/      # Metric formulas catalogue
 │   ├── benchmarks/   # Benchmark schema + how lookups work
 │   ├── scoring/      # 0–100 normalisation methodology

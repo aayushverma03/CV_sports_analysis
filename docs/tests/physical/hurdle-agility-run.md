@@ -2,7 +2,7 @@
 
 **Domain**: physical
 **Family**: agility
-**Status**: active
+**Status**: deferred (out of v1 scope — replaced by 45-Second Agility Hurdle Jump; ships in v1.1+ if reinstated)
 
 ## 1. Purpose
 

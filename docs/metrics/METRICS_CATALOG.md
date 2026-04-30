@@ -18,17 +18,18 @@ this catalog — they do **not** redefine formulas.
 - All metrics return `float` scalars or small typed dicts; no DataFrames.
 - All time-series inputs are `numpy.ndarray` plus `fps: float`.
 
-## v1 test scope (20 tests)
+## v1 test scope (21 tests)
 
 For brevity, the "Applies to" column uses these short names:
 
 **Sprint family**: `linear_sprint`, `5x10_cod`, `bangsbo` (7×34.2m), `rsa`
-**Agility family**: `t_test`, `illinois`, `hurdle_agility`
+**Agility family**: `t_test`, `illinois`, `45-second-agility-hurdle-jump`
 **Jump family**: `cmj`, `drop_jump`, `squat_jump`, `slj` (Standing Long Jump)
-**Endurance family**: `yo_yo`, `multistage`
+**Endurance family**: `yo_yo` (IR2), `multistage`
 **Throw family**: `med_ball`
 **Dribbling family**: `straight_dribble`, `figure_8`, `zigzag`
 **Skill family**: `wall_pass`, `juggling`, `foot_tapping`
+**Mobility / Posture family**: `less` (subset score)
 
 ---
 
@@ -68,6 +69,8 @@ Movement primitives derived from athlete tracking.
 | metric_id | definition | applies to |
 |---|---|---|
 | `cone_miss_events` | Count of cones the athlete failed to round on the prescribed side, OR cones the athlete physically contacted. Per-test definition documented in each spec. | `illinois`, `zigzag` |
+| `total_successful_jumps` | Count of successful two-footed hurdle clearances within the fixed window (45 s). A clearance = both ankle keypoints rise above the hurdle's top y during airborne phase, no clipping of the hurdle bbox. | `45-second-agility-hurdle-jump` |
+| `failed_clearance_count` | Number of jumps where ankle clipped the hurdle or athlete stepped around. Auxiliary; not benchmarked. | `45-second-agility-hurdle-jump` |
 | `avg_cod_angle_deg` | Mean change-of-direction angle at each cone (athlete velocity vector before vs after cone). | `zigzag` |
 | `hurdles_cleared` | Count of hurdles successfully cleared (no contact, no step-around). | `hurdle_agility` |
 | `non_clearance_count` | `total_hurdles − hurdles_cleared`. | `hurdle_agility` |
@@ -135,7 +138,7 @@ with visual sanity check.
 | `missed_beep_count` | Number of shuttles where athlete crossed the line *after* the beep. Test ends after 2 consecutive misses. | `yo_yo`, `multistage` |
 | `total_distance_m` | `num_shuttles_completed × shuttle_length × 2` (out-and-back). | `yo_yo`, `multistage` |
 | `total_completion_time_s` | First beep → end-of-test. | `yo_yo` |
-| `vo2max_estimated` | Yo-Yo IR1 regression: `VO2max = total_distance_m × 0.0084 + 36.4`. | `yo_yo` |
+| `vo2max_estimated` | Yo-Yo IR2 regression (Bangsbo et al. 2008): `VO2max = total_distance_m × 0.0136 + 45.3`. | `yo_yo` |
 | `split_times_s` | Per-shuttle cumulative times. | `yo_yo` |
 | `split_times_per_level_s` | Mean shuttle time at each completed level. | `multistage` |
 
@@ -145,7 +148,7 @@ with visual sanity check.
 
 | metric_id | definition | applies to |
 |---|---|---|
-| `total_taps` | Count of foot-on-ball taps in the fixed test window (10 s default). A tap = ankle keypoint within proximity threshold of ball centre, then leaves. | `foot_tapping` |
+| `total_taps` | Count of foot-on-ball taps in the fixed test window (30 s). A tap = ankle keypoint within proximity threshold of ball centre, then leaves. | `foot_tapping` |
 | `taps_per_second` | `total_taps / window_duration_s`. | `foot_tapping` |
 | `left_taps` | Count restricted to left-foot (ankle 15) taps. **Informational, not benchmarked.** | `foot_tapping` |
 | `right_taps` | Count restricted to right-foot (ankle 16) taps. **Informational, not benchmarked.** | `foot_tapping` |

@@ -1,0 +1,46 @@
+test_id: wall-pass
+display_name: "Wall Pass Test (30 s)"
+
+aggregation:
+  method: weighted_mean
+  weights:
+    successful_passes:        0.40
+    passing_accuracy_percent: 0.20
+    average_decision_time_s:  0.20
+    average_pass_velocity_ms: 0.20
+
+metrics:
+  successful_passes:
+    direction: higher_is_better
+    unit: count
+    # 30-second window; "successful" = ball returned and recontrolled.
+    male:    { P: 12, E: 18, A: 24, L: 30 }
+    female:  { P: 10, E: 15, A: 21, L: 27 }
+
+  passing_accuracy_percent:
+    direction: higher_is_better
+    unit: pct
+    male:    { P: 50, E: 70, A: 85, L: 95 }
+    female:  { P: 50, E: 70, A: 85, L: 95 }
+
+  average_decision_time_s:
+    direction: lower_is_better
+    unit: s
+    male:    { P: 1.0, E: 0.7, A: 0.5, L: 0.3 }
+    female:  { P: 1.1, E: 0.8, A: 0.6, L: 0.4 }
+
+  average_pass_velocity_ms:
+    direction: higher_is_better
+    unit: m_per_s
+    male:    { P: 8.0,  E: 12.0, A: 16.0, L: 20.0 }
+    female:  { P: 6.0,  E: 10.0, A: 14.0, L: 18.0 }
+
+metadata:
+  source: |
+    No peer-reviewed normative data located for the 30-second wall-pass test;
+    one academic protocol uses a 45-second window (Strudwick et al.) and
+    others use drill-style cycles. Numbers anchored to coaching expectations
+    for trained-to-elite youth players. Decision-time and pass-velocity
+    thresholds are extrapolated from general passing speed ranges in soccer.
+  confidence: provisional
+  last_updated: 2026-04-30

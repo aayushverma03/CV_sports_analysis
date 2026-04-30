@@ -1,0 +1,41 @@
+test_id: repeated-sprint-ability
+display_name: "Repeated Sprint Ability (RSA, 6 × 30 m)"
+
+aggregation:
+  method: weighted_mean
+  weights:
+    sprint_best_s:        0.30
+    sprint_mean_s:        0.30
+    pct_sprint_decrement: 0.40
+
+metrics:
+  sprint_best_s:
+    direction: lower_is_better
+    unit: s
+    male:    { P: 4.7, E: 4.4, A: 4.1, L: 3.9 }
+    female:  { P: 5.4, E: 5.0, A: 4.6, L: 4.4 }
+
+  sprint_mean_s:
+    direction: lower_is_better
+    unit: s
+    male:    { P: 5.0, E: 4.6, A: 4.3, L: 4.1 }
+    female:  { P: 5.7, E: 5.3, A: 4.9, L: 4.6 }
+
+  pct_sprint_decrement:
+    # Glaister formula. <3% considered elite, >7% poor in academic literature.
+    direction: lower_is_better
+    unit: pct
+    male:    { P: 8.0, E: 5.0, A: 3.0, L: 1.5 }
+    female:  { P: 9.0, E: 6.0, A: 4.0, L: 2.0 }
+
+metadata:
+  source: |
+    Spencer M et al. (2005). Physiological and metabolic responses of
+    repeated-sprint activities. Sports Med 35(12). Plus systematic review:
+    Aughey RJ et al. (2025). Assessment of Aerobic Fitness and Repeated
+    Sprint Ability in Elite Male Soccer (Sports Medicine 2025).
+    https://link.springer.com/article/10.1007/s40279-025-02188-4
+    Female thresholds derived by proportional scaling from male elite RSA norms
+    (typical female-to-male sprint ratio ~1.10-1.15 in soccer).
+  confidence: medium
+  last_updated: 2026-04-30

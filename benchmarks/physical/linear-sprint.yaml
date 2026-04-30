@@ -1,104 +1,43 @@
 test_id: linear-sprint
-display_name: "Linear Sprint (10/20/30 m)"
-score_direction: lower_is_better
-units:
-  total_completion_time: s
-  split_10m: s
-  split_20m: s
-  split_30m: s
-  max_speed: m/s
+display_name: "Linear Sprint (10/20/30/40 m)"
 
 aggregation:
   method: weighted_mean
   weights:
-    total_completion_time: 0.40
-    max_speed:             0.30
-    split_10m:             0.15
-    split_20m:             0.15
+    time_10m_s: 0.25
+    time_20m_s: 0.25
+    time_30m_s: 0.25
+    time_40m_s: 0.25
 
-age_bands: [U12, U14, U16, U18, U23, Senior]
+metrics:
+  time_10m_s:
+    direction: lower_is_better
+    unit: s
+    male:    { P: 2.4, E: 2.1, A: 1.8, L: 1.6 }
+    female:  { P: 2.6, E: 2.3, A: 2.0, L: 1.8 }
 
-# NOTE: Values below are PLACEHOLDER illustrative norms, not validated.
-# Replace with the project's verified cohort data before production use.
-benchmarks:
-  M:
-    U12:
-      total_completion_time: { p10: 5.40, p50: 5.10, p90: 4.75 }
-      split_10m:              { p10: 2.05, p50: 1.95, p90: 1.85 }
-      split_20m:              { p10: 3.55, p50: 3.40, p90: 3.20 }
-      split_30m:              { p10: 5.40, p50: 5.10, p90: 4.75 }
-      max_speed:              { p10: 5.8,  p50: 6.4,  p90: 7.0 }
-    U14:
-      total_completion_time: { p10: 5.10, p50: 4.85, p90: 4.55 }
-      split_10m:              { p10: 1.95, p50: 1.85, p90: 1.78 }
-      split_20m:              { p10: 3.40, p50: 3.20, p90: 3.05 }
-      split_30m:              { p10: 5.10, p50: 4.85, p90: 4.55 }
-      max_speed:              { p10: 6.2,  p50: 6.8,  p90: 7.4 }
-    U16:
-      total_completion_time: { p10: 4.80, p50: 4.55, p90: 4.30 }
-      split_10m:              { p10: 1.88, p50: 1.78, p90: 1.70 }
-      split_20m:              { p10: 3.20, p50: 3.05, p90: 2.92 }
-      split_30m:              { p10: 4.80, p50: 4.55, p90: 4.30 }
-      max_speed:              { p10: 6.6,  p50: 7.2,  p90: 7.8 }
-    U18:
-      total_completion_time: { p10: 4.65, p50: 4.42, p90: 4.20 }
-      split_10m:              { p10: 1.84, p50: 1.74, p90: 1.66 }
-      split_20m:              { p10: 3.10, p50: 2.96, p90: 2.84 }
-      split_30m:              { p10: 4.65, p50: 4.42, p90: 4.20 }
-      max_speed:              { p10: 6.9,  p50: 7.5,  p90: 8.1 }
-    U23:
-      total_completion_time: { p10: 4.55, p50: 4.32, p90: 4.10 }
-      split_10m:              { p10: 1.80, p50: 1.71, p90: 1.63 }
-      split_20m:              { p10: 3.02, p50: 2.88, p90: 2.76 }
-      split_30m:              { p10: 4.55, p50: 4.32, p90: 4.10 }
-      max_speed:              { p10: 7.1,  p50: 7.7,  p90: 8.4 }
-    Senior:
-      total_completion_time: { p10: 4.55, p50: 4.30, p90: 4.05 }
-      split_10m:              { p10: 1.80, p50: 1.70, p90: 1.62 }
-      split_20m:              { p10: 3.02, p50: 2.86, p90: 2.74 }
-      split_30m:              { p10: 4.55, p50: 4.30, p90: 4.05 }
-      max_speed:              { p10: 7.1,  p50: 7.8,  p90: 8.5 }
+  time_20m_s:
+    direction: lower_is_better
+    unit: s
+    male:    { P: 4.1, E: 3.6, A: 3.1, L: 2.7 }
+    female:  { P: 4.4, E: 3.9, A: 3.4, L: 3.0 }
 
-  F:
-    U12:
-      total_completion_time: { p10: 5.80, p50: 5.45, p90: 5.10 }
-      split_10m:              { p10: 2.18, p50: 2.05, p90: 1.94 }
-      split_20m:              { p10: 3.80, p50: 3.60, p90: 3.40 }
-      split_30m:              { p10: 5.80, p50: 5.45, p90: 5.10 }
-      max_speed:              { p10: 5.4,  p50: 6.0,  p90: 6.6 }
-    U14:
-      total_completion_time: { p10: 5.45, p50: 5.15, p90: 4.85 }
-      split_10m:              { p10: 2.05, p50: 1.95, p90: 1.85 }
-      split_20m:              { p10: 3.60, p50: 3.40, p90: 3.22 }
-      split_30m:              { p10: 5.45, p50: 5.15, p90: 4.85 }
-      max_speed:              { p10: 5.7,  p50: 6.3,  p90: 6.9 }
-    U16:
-      total_completion_time: { p10: 5.20, p50: 4.92, p90: 4.65 }
-      split_10m:              { p10: 1.98, p50: 1.88, p90: 1.78 }
-      split_20m:              { p10: 3.45, p50: 3.25, p90: 3.10 }
-      split_30m:              { p10: 5.20, p50: 4.92, p90: 4.65 }
-      max_speed:              { p10: 5.9,  p50: 6.5,  p90: 7.1 }
-    U18:
-      total_completion_time: { p10: 5.05, p50: 4.78, p90: 4.52 }
-      split_10m:              { p10: 1.94, p50: 1.84, p90: 1.74 }
-      split_20m:              { p10: 3.35, p50: 3.16, p90: 3.02 }
-      split_30m:              { p10: 5.05, p50: 4.78, p90: 4.52 }
-      max_speed:              { p10: 6.1,  p50: 6.7,  p90: 7.3 }
-    U23:
-      total_completion_time: { p10: 4.95, p50: 4.70, p90: 4.45 }
-      split_10m:              { p10: 1.92, p50: 1.82, p90: 1.72 }
-      split_20m:              { p10: 3.30, p50: 3.10, p90: 2.96 }
-      split_30m:              { p10: 4.95, p50: 4.70, p90: 4.45 }
-      max_speed:              { p10: 6.2,  p50: 6.9,  p90: 7.5 }
-    Senior:
-      total_completion_time: { p10: 4.95, p50: 4.68, p90: 4.42 }
-      split_10m:              { p10: 1.92, p50: 1.82, p90: 1.72 }
-      split_20m:              { p10: 3.30, p50: 3.08, p90: 2.94 }
-      split_30m:              { p10: 4.95, p50: 4.68, p90: 4.42 }
-      max_speed:              { p10: 6.2,  p50: 7.0,  p90: 7.6 }
+  time_30m_s:
+    direction: lower_is_better
+    unit: s
+    # Note: thresholds appear unusually tight relative to 20 m. User
+    # acknowledged the anomaly and chose to ship as-is; revisit when
+    # validating against athlete data.
+    male:    { P: 4.4, E: 4.2, A: 4.0, L: 3.8 }
+    female:  { P: 4.9, E: 4.6, A: 4.3, L: 4.1 }
+
+  time_40m_s:
+    direction: lower_is_better
+    unit: s
+    male:    { P: 5.8, E: 5.5, A: 5.2, L: 4.6 }
+    female:  { P: 6.3, E: 5.9, A: 5.5, L: 5.3 }
 
 metadata:
-  source: "PLACEHOLDER — replace with cohort data before production"
-  sample_size: 0
-  confidence: provisional
-  last_updated: 2026-04-28
+  source: "User-provided thresholds, soccer U17-U23"
+  confidence: high
+  last_updated: 2026-04-30

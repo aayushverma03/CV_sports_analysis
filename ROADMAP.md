@@ -54,7 +54,7 @@ Throw, Biomech, Endurance, Cognitive metrics: implement when their tests come up
 - [ ] `src/tests/families/throw_family.py`
 - [ ] `src/tests/families/skill_family.py` (discrete action counting, ball control)
 
-## Phase 4 — Test pipelines (20 of them, one at a time)
+## Phase 4 — Test pipelines (21 of them, one at a time)
 
 Recommended order — each row gets its own session:
 
@@ -67,7 +67,7 @@ Recommended order — each row gets its own session:
 6. Foot Tapping → `src/tests/physical/foot_tapping.py`
 
 **Agility family:**
-7. T-Test · 8. Illinois Agility · 9. Hurdle Agility Run · 10. 5×10m Sprint with COD
+7. T-Test · 8. Illinois Agility · 9. 45-Second Agility Hurdle Jump · 10. 5×10m Sprint with COD
 
 **Jump family:**
 11. Squat Jump · 12. Standing Long Jump
@@ -76,7 +76,7 @@ Recommended order — each row gets its own session:
 13. Zig-Zag Dribbling · 14. Figure of 8 Dribbling
 
 **Endurance family:**
-15. Yo-Yo Intermittent · 16. Bangsbo Sprint (7×34.2m) · 17. Multistage Fitness · 18. Repeated Sprint Ability
+15. Yo-Yo Intermittent (IR2) · 16. Bangsbo Sprint (7×34.2m) · 17. Multistage Fitness · 18. Repeated Sprint Ability
 
 **Skill / passing:**
 19. Wall Pass
@@ -84,8 +84,11 @@ Recommended order — each row gets its own session:
 **Throw:**
 20. Medicine Ball Throw
 
+**Mobility / Posture:**
+21. LESS (subset score)
+
 **Out of v1 scope** (deferred — awaiting data, ships in v1.1 or later):
-30-15 Intermittent · Cooper · DFB Agility · Incremental Ramp · Single-Leg Hop · Sit-and-Reach · Stepwise Core Stability · DFB Shooting · Landing Error Scoring System (LESS) · Reaction Time · Pattern Recognition · Video-Based Decision-Making
+30-15 Intermittent · Cooper · DFB Agility · Hurdle Agility Run (replaced by 45-Second variant) · Incremental Ramp · Single-Leg Hop · Sit-and-Reach · Stepwise Core Stability · DFB Shooting · Reaction Time · Pattern Recognition · Video-Based Decision-Making
 
 ## Phase 5 — Annotation polish
 
@@ -113,4 +116,4 @@ Recommended order — each row gets its own session:
 - [ ] Integration tests with sample videos in `data/` for every test
 - [ ] Performance pass: profile a representative video, kill any double-passes over the file
 - [ ] Add per-test acceptance criteria to docs (FPS minimum, max processing time)
-- [ ] Documentation review across all 20 test specs
+- [ ] Documentation review across all 21 test specs

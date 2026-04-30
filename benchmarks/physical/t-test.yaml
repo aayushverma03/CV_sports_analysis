@@ -1,0 +1,14 @@
+test_id: t-test
+display_name: "T-Test (Agility)"
+
+metrics:
+  total_completion_time_s:
+    direction: lower_is_better
+    unit: s
+    male:    { P: 11.5, E: 10.5, A: 9.5,  L: 8.8 }
+    female:  { P: 12.5, E: 11.5, A: 10.5, L: 9.8 }
+
+metadata:
+  source: "User-provided thresholds, soccer U17-U23"
+  confidence: high
+  last_updated: 2026-04-30

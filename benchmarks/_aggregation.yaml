@@ -1,0 +1,51 @@
+# Aggregation weights for v1 — test → subarea → area.
+#
+# Each subarea's weights must sum to 1.0; each area's subarea weights too.
+# Validated by src/scoring/benchmarks.py on load.
+
+areas:
+  foundation:
+    speed_agility:        0.35
+    strength_power:       0.30
+    endurance:            0.20
+    mobility_stability:   0.15
+  technical:
+    dribbling:            0.45
+    passing:              0.35
+    ball_control:         0.20
+
+subareas:
+  speed_agility:
+    linear-sprint:                   0.20
+    5x10m-sprint-cod:                0.18
+    repeated-sprint-ability:         0.14
+    illinois-agility:                0.12
+    t-test:                          0.12
+    bangsbo-sprint:                  0.12
+    45-second-agility-hurdle-jump:   0.07
+    foot-tapping:                    0.05
+
+  strength_power:
+    counter-movement-jump:           0.30
+    drop-jump:                       0.22
+    squat-jump:                      0.18
+    standing-long-jump:              0.18
+    medicine-ball-throw:             0.12
+
+  endurance:
+    yo-yo-intermittent:              0.60
+    multistage-fitness:              0.40
+
+  mobility_stability:
+    landing-error-scoring-system:    1.00
+
+  dribbling:
+    zig-zag-dribbling:               0.40
+    figure-of-8-dribbling:           0.35
+    straight-line-dribbling:         0.25
+
+  passing:
+    wall-pass:                       1.00
+
+  ball_control:
+    juggling:                        1.00

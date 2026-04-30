@@ -1,0 +1,22 @@
+test_id: squat-jump
+display_name: "Squat Jump"
+
+# Squat jump heights run consistently 10–15% lower than CMJ for the same
+# athlete (Bosco 1983; Markovic 2007). Thresholds derived from the user's
+# CMJ benchmarks scaled by 0.90 (10% reduction) and rounded.
+
+metrics:
+  jump_height_cm:
+    direction: higher_is_better
+    unit: cm
+    male:    { P: 45, E: 54, A: 63, L: 68 }
+    female:  { P: 32, E: 41, A: 50, L: 54 }
+
+metadata:
+  source: |
+    Derived from user-provided CMJ benchmarks via the 10% SJ-vs-CMJ ratio
+    documented in Markovic G et al. (2007) and Bosco C et al. (1983).
+    Cross-checked against elite-soccer SJ norms reviewed in Slimani M, Nikolaidis PT
+    (2019), J Strength Cond Res. Refine after first cohort of athlete data.
+  confidence: medium
+  last_updated: 2026-04-30

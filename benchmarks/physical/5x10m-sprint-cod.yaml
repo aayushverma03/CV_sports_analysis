@@ -1,0 +1,35 @@
+test_id: 5x10m-sprint-cod
+display_name: "5 × 10 m Sprint with Change of Direction"
+
+aggregation:
+  method: weighted_mean
+  weights:
+    total_completion_time_s: 0.5
+    sprint_best_s:           0.3
+    fatigue_drop_off_pct:    0.2
+
+metrics:
+  total_completion_time_s:
+    direction: lower_is_better
+    unit: s
+    male:    { P: 15.5, E: 13.5, A: 12.0, L: 10.8 }
+    female:  { P: 17.5, E: 15.0, A: 13.2, L: 12.0 }
+
+  sprint_best_s:
+    # User benchmark labelled "Rep time"; interpreted as best single rep.
+    direction: lower_is_better
+    unit: s
+    male:    { P: 2.8, E: 2.4, A: 2.1, L: 1.8 }
+    female:  { P: 3.1, E: 2.7, A: 2.3, L: 2.0 }
+
+  fatigue_drop_off_pct:
+    # 2-point: (rep_last − rep_first) / rep_first × 100
+    direction: lower_is_better
+    unit: pct
+    male:    { P: 10, E: 6, A: 4, L: 2 }
+    female:  { P: 12, E: 7, A: 5, L: 3 }
+
+metadata:
+  source: "User-provided thresholds, soccer U17-U23"
+  confidence: high
+  last_updated: 2026-04-30

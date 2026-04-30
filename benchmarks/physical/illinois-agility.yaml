@@ -1,0 +1,14 @@
+test_id: illinois-agility
+display_name: "Illinois Agility Test"
+
+metrics:
+  total_completion_time_s:
+    direction: lower_is_better
+    unit: s
+    male:    { P: 18.3, E: 18.1, A: 16.1, L: 15.2 }
+    female:  { P: 23.0, E: 21.7, A: 17.9, L: 17.0 }
+
+metadata:
+  source: "User-provided thresholds, soccer U17-U23"
+  confidence: high
+  last_updated: 2026-04-30

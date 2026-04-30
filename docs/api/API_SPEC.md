@@ -66,7 +66,7 @@ Streams the annotated MP4. Supports `Range` requests for in-browser playback.
 
 ### `GET /v1/tests`
 
-Lists all 20 CV-pipeline tests with their metadata.
+Lists all 21 CV-pipeline tests with their metadata.
 
 **Response**:
 ```json

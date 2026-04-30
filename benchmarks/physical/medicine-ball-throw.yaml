@@ -1,0 +1,14 @@
+test_id: medicine-ball-throw
+display_name: "Medicine Ball Throw"
+
+metrics:
+  throw_distance_m:
+    direction: higher_is_better
+    unit: m
+    male:    { P: 7.0, E: 9.0,  A: 11.0, L: 12.5 }
+    female:  { P: 5.0, E: 6.5,  A: 8.0,  L: 9.5 }
+
+metadata:
+  source: "User-provided thresholds, soccer U17-U23"
+  confidence: high
+  last_updated: 2026-04-30

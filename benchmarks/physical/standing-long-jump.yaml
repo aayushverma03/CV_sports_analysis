@@ -1,0 +1,14 @@
+test_id: standing-long-jump
+display_name: "Standing Long Jump"
+
+metrics:
+  jump_distance_cm:
+    direction: higher_is_better
+    unit: cm
+    male:    { P: 191, E: 221, A: 241, L: 251 }
+    female:  { P: 141, E: 171, A: 191, L: 201 }
+
+metadata:
+  source: "User-provided thresholds, soccer U17-U23"
+  confidence: high
+  last_updated: 2026-04-30

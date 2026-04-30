@@ -1,0 +1,20 @@
+test_id: zig-zag-dribbling
+display_name: "Zig-Zag Dribbling Test"
+
+metrics:
+  total_completion_time_s:
+    direction: lower_is_better
+    unit: s
+    # 5–7 cone slalom at 2 m spacing (per docs/tests/technical/zig-zag-dribbling.md).
+    # Anchored to modified-Illinois-with-ball norms: elite 15.5 s, nonelite
+    # 18.3 s (Reilly 2008); shorter Zig-Zag courses scale proportionally.
+    male:    { P: 14.0, E: 12.0, A: 10.0, L: 8.5 }
+    female:  { P: 15.0, E: 13.0, A: 11.0, L: 9.5 }
+
+metadata:
+  source: |
+    Anchored to Reilly T (2008) on dribble-test elite vs nonelite gap, scaled
+    to a shorter slalom variant. No published percentiles for this specific
+    course geometry; provisional pending cohort calibration.
+  confidence: provisional
+  last_updated: 2026-04-30
