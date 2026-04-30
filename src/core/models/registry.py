@@ -94,6 +94,30 @@ REGISTRY: dict[str, ModelSpec] = {
             "notes": "Trained on 30 images. Detection signal exists but low confidence on out-of-distribution frames. Extend dataset (~150-200 instances) for production v1.",
         },
     ),
+    "detector_cone_v1": ModelSpec(
+        name="cone_v1",
+        weights="custom/cone_v1.pt",
+        backend="ultralytics",
+        version="1.0.0",
+        extras={
+            "task": "detect",
+            "classes": ["cone"],
+            "confidence_default": 0.35,
+            "iou_default": 0.45,
+            "trained_on": "data/_labelling/community/cone_v1/data.yaml",
+            "val_mAP50": 0.994,
+            # Stopped early at ~epoch 67 of 100; mAP50 plateaued at 0.99 by
+            # epoch ~30. Trained only on traffic cones. User's videos also
+            # contain flat marker disks (red/green) and yellow slalom poles
+            # which are not represented in this training set. Smoke test on
+            # real videos: T-Test (traffic cones) 5/5 frames detected, mean
+            # conf 0.49; Linear Sprint (flat disks) 0/5; Illinois (mixed) 0/5;
+            # Zig-Zag (poles) 1/5. Extend with own-labelled disk + pole
+            # frames for v2 to cover those classes under the same `cone`
+            # label.
+            "notes": "Traffic cones only. Tests using flat marker disks (Linear Sprint, Illinois) or slalom poles (Zig-Zag) will need v2 with extended dataset.",
+        },
+    ),
     # detector_hurdle_v1 deregistered: the only v1 test that consumed it
     # (45-Second Agility Hurdle Jump) was deferred. Weights stay on disk at
     # models/custom/hurdle_v1.pt; dataset stays at

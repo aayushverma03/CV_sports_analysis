@@ -13,12 +13,13 @@ def test_registry_keys():
         "pose_biomech",
         "detector_medicine_ball_v1",
         "detector_plyo_box_v1",
+        "detector_cone_v1",
     }
     assert set(reg.REGISTRY) == expected
 
 
 def test_custom_detectors_have_expected_metadata():
-    for key in ("detector_medicine_ball_v1", "detector_plyo_box_v1"):
+    for key in ("detector_medicine_ball_v1", "detector_plyo_box_v1", "detector_cone_v1"):
         spec = reg.get_spec(key)
         assert spec.backend == "ultralytics"
         assert spec.weights.startswith("custom/")
