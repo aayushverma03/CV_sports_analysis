@@ -64,7 +64,14 @@ _TOUCH_DEBOUNCE_S = 0.15        # prevents consecutive contact frames double-cou
 _POSE_CONF_MIN = 0.30
 
 # Streak / drop detection
-_DROP_NO_TOUCH_S = 0.7          # >= 0.7 s without a touch = ball dropped
+# A "drop" needs evidence: either we directly see the ball far from the
+# athlete, or we've gone a long stretch without any sign of a touch. A
+# brief disappearance (athlete turns away from camera, ball briefly
+# occluded by body) should NOT end the streak.
+_BALL_FAR_FRAC = 1.5            # ball >= 1.5 * bbox_h from athlete = "far"
+_DROP_BALL_FAR_S = 0.5          # ball confirmed far for this long -> drop
+_DROP_TIMEOUT_S = 3.0           # absolute fallback: no touches for this long -> drop
+_BALL_RECENCY_S = 0.5           # ball-far check requires ball visible within this window
 
 _ENDCARD_HOLD_S = 2.5
 
@@ -85,7 +92,14 @@ class _RunState:
     current_streak: int = 0
     last_touch_frame: int = -10**6
     first_touch_frame: int | None = None
-    athlete_track_id: int | None = None
+    # Cumulative bbox area per track_id — "dominant track" wins (closest to
+    # camera for most of the video). Single-pass-friendly equivalent of a
+    # post-hoc analysis.
+    track_area: dict[int, float] = field(default_factory=dict)
+    # Ball-far drop signal: count consecutive frames the ball has been
+    # confidently far from the athlete.
+    ball_far_run: int = 0
+    last_ball_seen_frame: int = -10**6
     n_low_pose_conf: int = 0
     n_frames_with_athlete: int = 0
     n_frames_with_ball: int = 0
@@ -130,7 +144,9 @@ class JugglingTest(BaseTest):
         state = _RunState()
         n_frames = 0
         debounce_frames = int(round(_TOUCH_DEBOUNCE_S * fps))
-        drop_frames = int(round(_DROP_NO_TOUCH_S * fps))
+        drop_far_frames = int(round(_DROP_BALL_FAR_S * fps))
+        drop_timeout_frames = int(round(_DROP_TIMEOUT_S * fps))
+        ball_recency_frames = int(round(_BALL_RECENCY_S * fps))
 
         try:
             for frame in frame_iter(video_path):
@@ -163,12 +179,37 @@ class JugglingTest(BaseTest):
                         if state.first_touch_frame is None:
                             state.first_touch_frame = frame.idx
                         state.current_streak += 1
+                        state.ball_far_run = 0
 
-                # Drop / streak end: no touch for `drop_frames` after at least one touch
-                if (state.current_streak > 0
-                        and (frame.idx - state.last_touch_frame) >= drop_frames):
-                    state.streaks.append(state.current_streak)
-                    state.current_streak = 0
+                # Track ball-far signal — the streak-ending evidence
+                if ball is not None:
+                    state.last_ball_seen_frame = frame.idx
+                    if runner is not None:
+                        bx, by = ball.center
+                        rx, ry = runner.center
+                        d = float(np.hypot(bx - rx, by - ry))
+                        if d > _BALL_FAR_FRAC * runner.height:
+                            state.ball_far_run += 1
+                        else:
+                            state.ball_far_run = 0
+
+                # Drop / streak end: ball confirmed far for >= drop_far_frames,
+                # OR absolute timeout with no touch for drop_timeout_frames.
+                if state.current_streak > 0:
+                    no_touch_for = frame.idx - state.last_touch_frame
+                    ball_seen_recently = (
+                        frame.idx - state.last_ball_seen_frame
+                    ) <= ball_recency_frames
+                    drop_signal = False
+                    if (ball_seen_recently
+                            and state.ball_far_run >= drop_far_frames):
+                        drop_signal = True
+                    elif no_touch_for >= drop_timeout_frames:
+                        drop_signal = True
+                    if drop_signal:
+                        state.streaks.append(state.current_streak)
+                        state.current_streak = 0
+                        state.ball_far_run = 0
 
                 # Annotation
                 if runner is not None:
@@ -232,22 +273,28 @@ class JugglingTest(BaseTest):
     def _pick_athlete(
         self, tracked: list[TrackedDetection], state: _RunState
     ) -> TrackedDetection | None:
-        """Largest person in frame = closest to camera = focal athlete.
+        """Pick the cumulatively-largest track (closest-to-camera for most
+        of the video). Updates the running tally each call.
 
-        Re-locks if the previously locked track is no longer present
-        (multi-person scenes confuse ByteTrack; we don't want to lose the
-        athlete forever just because their ID got reassigned).
+        Single-pass-friendly: we accumulate bbox area per track_id as the
+        video plays. The "winner" is the track that has been closest to
+        the camera for the longest. Brief intrusions by other people
+        (smaller/shorter-lived) don't beat the focal player.
         """
         people = [t for t in tracked if t.class_id == PERSON_CLASS_ID]
+        for t in people:
+            state.track_area[t.track_id] = (
+                state.track_area.get(t.track_id, 0.0) + t.height * t.width
+            )
         if not people:
             return None
-        if state.athlete_track_id is not None:
-            for t in people:
-                if t.track_id == state.athlete_track_id:
-                    return t
-        largest = max(people, key=lambda t: t.height * t.width)
-        state.athlete_track_id = largest.track_id
-        return largest
+        if not state.track_area:
+            return None
+        dominant_id = max(state.track_area, key=state.track_area.get)
+        for t in people:
+            if t.track_id == dominant_id:
+                return t
+        return None
 
     def _compute_metrics(
         self, state: _RunState, fps: float
