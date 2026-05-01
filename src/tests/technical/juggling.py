@@ -52,15 +52,21 @@ SPORTS_BALL_CLASS_ID = 32
 # --- Tunables ----------------------------------------------------------
 
 # Touch detection
+# Foot + thigh (knee proxy) only. Including the head was over-counting:
+# a single juggle has the ball travel through ankle->knee->head and back,
+# triggering 3+ touches per actual contact. Foot/thigh only matches the
+# typical juggling-drill protocol and removes the worst false positives.
 _TOUCH_BODY_PARTS: tuple[tuple[str, str], ...] = (
     ("left_ankle", "L"),
     ("right_ankle", "R"),
     ("left_knee", "L"),
     ("right_knee", "R"),
-    ("nose", "head"),
 )
 _TOUCH_PROXIMITY_FRAC = 0.20    # ball within 20 % of bbox-h of body part
-_TOUCH_DEBOUNCE_S = 0.15        # prevents consecutive contact frames double-counting
+# Debounce >= half the slowest expected cadence (elite 2.5 Hz -> 0.4 s
+# gaps); 0.25 s comfortably below that and well above the 0.15 s we had,
+# which was double-counting through the ankle->knee transitions.
+_TOUCH_DEBOUNCE_S = 0.25
 _POSE_CONF_MIN = 0.30
 
 # Streak / drop detection
@@ -68,7 +74,7 @@ _POSE_CONF_MIN = 0.30
 # athlete, or we've gone a long stretch without any sign of a touch. A
 # brief disappearance (athlete turns away from camera, ball briefly
 # occluded by body) should NOT end the streak.
-_BALL_FAR_FRAC = 1.5            # ball >= 1.5 * bbox_h from athlete = "far"
+_BALL_FAR_FRAC = 1.5            # |ball_x - athlete_x| >= 1.5 * bbox_h = "far"
 _DROP_BALL_FAR_S = 0.5          # ball confirmed far for this long -> drop
 _DROP_TIMEOUT_S = 3.0           # absolute fallback: no touches for this long -> drop
 _BALL_RECENCY_S = 0.5           # ball-far check requires ball visible within this window
@@ -115,10 +121,12 @@ class JugglingTest(BaseTest):
 
     def __init__(self) -> None:
         # Person + ball tracked in one ByteTrack call (single inference per frame).
-        # Lower confidence on the ball — small + motion-blurred at 30 fps.
+        # Confidence lowered (0.10) so high-toss / motion-blurred ball frames
+        # still register; person detections are robust enough at low conf,
+        # and the cumulative-area picker filters down to the focal athlete.
         self._tracker = ByteTrackTracker(
             classes=[PERSON_CLASS_ID, SPORTS_BALL_CLASS_ID],
-            confidence=0.20,
+            confidence=0.10,
         )
         self._pose = create_pose_estimator("pose_default")
 
@@ -155,7 +163,7 @@ class JugglingTest(BaseTest):
 
                 tracked = self._tracker.update(img)
                 runner = self._pick_athlete(tracked, state)
-                ball = _pick_ball(tracked)
+                ball = _pick_ball(tracked, runner)
                 if runner is not None:
                     state.n_frames_with_athlete += 1
                 if ball is not None:
@@ -181,14 +189,17 @@ class JugglingTest(BaseTest):
                         state.current_streak += 1
                         state.ball_far_run = 0
 
-                # Track ball-far signal — the streak-ending evidence
+                # Track ball-far signal — only horizontal separation. During
+                # juggling the ball travels far vertically (up over the
+                # athlete's head and back down), but stays directly above
+                # them in x. A real drop = ball rolls away laterally, which
+                # is exactly what a horizontal-only distance captures.
                 if ball is not None:
                     state.last_ball_seen_frame = frame.idx
                     if runner is not None:
-                        bx, by = ball.center
-                        rx, ry = runner.center
-                        d = float(np.hypot(bx - rx, by - ry))
-                        if d > _BALL_FAR_FRAC * runner.height:
+                        bx, _ = ball.center
+                        rx, _ = runner.center
+                        if abs(bx - rx) > _BALL_FAR_FRAC * runner.height:
                             state.ball_far_run += 1
                         else:
                             state.ball_far_run = 0
@@ -273,13 +284,16 @@ class JugglingTest(BaseTest):
     def _pick_athlete(
         self, tracked: list[TrackedDetection], state: _RunState
     ) -> TrackedDetection | None:
-        """Pick the cumulatively-largest track (closest-to-camera for most
-        of the video). Updates the running tally each call.
+        """Pick the focal athlete — the person closest to the camera for
+        most of the video.
 
-        Single-pass-friendly: we accumulate bbox area per track_id as the
-        video plays. The "winner" is the track that has been closest to
-        the camera for the longest. Brief intrusions by other people
-        (smaller/shorter-lived) don't beat the focal player.
+        Strategy: each frame, pick the cumulatively-largest track. If
+        ByteTrack reassigned the focal player's track_id (common in dense
+        scenes when the athlete is briefly occluded), the dominant id can
+        go missing; in that case fall back to the LARGEST currently-
+        detected person, which is almost always the same focal athlete
+        with a fresh id. Their new id then accumulates area and becomes
+        dominant on its own.
         """
         people = [t for t in tracked if t.class_id == PERSON_CLASS_ID]
         for t in people:
@@ -288,13 +302,13 @@ class JugglingTest(BaseTest):
             )
         if not people:
             return None
-        if not state.track_area:
-            return None
-        dominant_id = max(state.track_area, key=state.track_area.get)
-        for t in people:
-            if t.track_id == dominant_id:
-                return t
-        return None
+        if state.track_area:
+            dominant_id = max(state.track_area, key=state.track_area.get)
+            for t in people:
+                if t.track_id == dominant_id:
+                    return t
+        # Fallback: largest in current frame (closest to camera now).
+        return max(people, key=lambda t: t.height * t.width)
 
     def _compute_metrics(
         self, state: _RunState, fps: float
@@ -323,9 +337,27 @@ class JugglingTest(BaseTest):
 # --- module-level helpers ---------------------------------------------
 
 
-def _pick_ball(tracked: list[TrackedDetection]) -> TrackedDetection | None:
+def _pick_ball(
+    tracked: list[TrackedDetection],
+    athlete: TrackedDetection | None,
+) -> TrackedDetection | None:
+    """Pick the ball closest to the athlete.
+
+    Multi-player training drills typically have several balls in frame
+    (other players' balls, balls on the ground). Highest-confidence ball
+    is often someone else's; the one geometrically closest to our athlete
+    is the one being juggled.
+    """
     balls = [t for t in tracked if t.class_id == SPORTS_BALL_CLASS_ID]
-    return balls[0] if balls else None
+    if not balls:
+        return None
+    if athlete is None:
+        return balls[0]  # highest-conf as fallback
+    ax, ay = athlete.center
+    return min(
+        balls,
+        key=lambda b: (b.center[0] - ax) ** 2 + (b.center[1] - ay) ** 2,
+    )
 
 
 def _detect_touch(
