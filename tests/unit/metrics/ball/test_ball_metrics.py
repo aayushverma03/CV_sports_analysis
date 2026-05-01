@@ -10,6 +10,7 @@ from src.metrics.ball.max_consecutive_touches import max_consecutive_touches
 from src.metrics.ball.max_pass_velocity_ms import max_pass_velocity_ms
 from src.metrics.ball.passing_accuracy_percent import passing_accuracy_percent
 from src.metrics.ball.touches_per_metre import touches_per_metre
+from src.metrics.ball.touches_per_second import touches_per_second
 
 
 # --- touches_per_metre --------------------------------------------------
@@ -93,3 +94,19 @@ def test_passing_accuracy_zero_attempts():
 
 def test_passing_accuracy_perfect():
     assert passing_accuracy_percent(10, 10) == 100.0
+
+
+# --- touches_per_second -------------------------------------------------
+
+
+def test_touches_per_second_basic():
+    assert touches_per_second(total_touches=20, active_duration_s=10.0) == 2.0
+
+
+def test_touches_per_second_zero_duration():
+    assert touches_per_second(total_touches=1, active_duration_s=0.0) == 0.0
+
+
+def test_touches_per_second_high_cadence():
+    # Elite-tier 2.5 Hz benchmark
+    assert touches_per_second(total_touches=50, active_duration_s=20.0) == 2.5
