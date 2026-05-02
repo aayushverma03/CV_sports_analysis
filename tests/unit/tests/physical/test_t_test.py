@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 from src.tests.physical.t_test import (
+    _TestRun,
     _find_test_run,
     _longest_motion_run,
+    _player_hud_fields,
 )
 
 
@@ -133,3 +135,29 @@ def test_find_test_run_none_below_min_frames():
 def test_find_test_run_returns_none_when_no_tracks():
     result = _find_test_run({}, fps=30.0, min_run_frames=180)
     assert result is None
+
+
+# --- _player_hud_fields ---------------------------------------------
+
+
+def test_hud_pre_start():
+    run = _TestRun(track_id=1, start_frame=100, stop_frame=400)
+    fields = _player_hud_fields(frame_idx=50, fps=30.0, run=run)
+    assert fields["phase"] == "ready"
+    assert fields["time"] == "-"
+
+
+def test_hud_during_run():
+    run = _TestRun(track_id=1, start_frame=100, stop_frame=400)
+    # 60 frames after start at 30 fps = 2 s
+    fields = _player_hud_fields(frame_idx=160, fps=30.0, run=run)
+    assert fields["phase"] == "running"
+    assert "2.00" in fields["time"]
+
+
+def test_hud_post_run():
+    run = _TestRun(track_id=1, start_frame=100, stop_frame=400)
+    fields = _player_hud_fields(frame_idx=500, fps=30.0, run=run)
+    assert fields["phase"] == "finished"
+    # Run is 300 frames at 30 fps = 10 s
+    assert "10.000" in fields["time"]
