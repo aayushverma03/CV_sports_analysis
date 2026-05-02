@@ -1,66 +1,135 @@
-"""Unit tests for T-Test state machine."""
+"""Unit tests for T-Test multi-track motion analysis."""
 from __future__ import annotations
 
-import numpy as np
-
-from src.core.tracking.bytetrack_tracker import TrackedDetection
 from src.tests.physical.t_test import (
-    TTestTest,
-    _RunState,
+    _find_test_run,
+    _longest_motion_run,
 )
 
 
-def _tracked(cx: float, cy: float, h: float = 200.0) -> TrackedDetection:
-    return TrackedDetection(
-        bbox_xyxy=np.array([cx - 50, cy - h / 2, cx + 50, cy + h / 2]),
-        confidence=0.8,
-        class_id=0,
-        track_id=1,
+def _stationary_track(n: int, x: float = 200.0, y: float = 400.0, h: float = 200.0):
+    return [(i, x, y, h) for i in range(n)]
+
+
+def _moving_track(
+    start_frame: int,
+    n_frames: int,
+    start_x: float = 200.0,
+    px_per_frame: float = 8.0,
+    y: float = 400.0,
+    h: float = 200.0,
+):
+    return [
+        (start_frame + i, start_x + i * px_per_frame, y, h)
+        for i in range(n_frames)
+    ]
+
+
+# --- _longest_motion_run --------------------------------------------
+
+
+def test_longest_run_finds_motion_segment():
+    """Stationary -> moving -> stationary returns the moving segment."""
+    history = (
+        _stationary_track(45)
+        + _moving_track(start_frame=45, n_frames=200, px_per_frame=10.0)
+        + _stationary_track(50, x=200.0 + 200 * 10.0)
     )
+    # Re-key the trailing stationary segment so frames are sequential
+    history = [(i, x, y, h) for i, (_, x, y, h) in enumerate(history)]
+    result = _longest_motion_run(history)
+    assert result is not None
+    start, stop = result
+    # Run should overlap with the moving frames (45..245 indexes)
+    assert 30 < start < 90
+    assert 200 < stop <= 250
 
 
-def _feed(test, state, frames):
-    for fi, cx, cy in frames:
-        det = _tracked(cx, cy)
-        state.center_history.append((fi, cx, cy, det.height))
-        test._update_state(state, det, fi)
+def test_longest_run_returns_none_for_stationary_track():
+    history = _stationary_track(120)
+    result = _longest_motion_run(history)
+    assert result is None
 
 
-def test_pre_start_to_running_to_stopped():
-    """Min run is 180 frames (6 s); feed enough running frames to satisfy."""
-    test = TTestTest.__new__(TTestTest)  # bypass __init__ (loads model)
-    state = _RunState()
-    pre = [(i, 200.0, 400.0) for i in range(15)]
-    moving = [(i, 200.0 + (i - 14) * 5.0, 400.0) for i in range(15, 215)]
-    last_x = 200.0 + (214 - 14) * 5.0
-    stopping = [(i, last_x, 400.0) for i in range(215, 280)]
-    _feed(test, state, pre + moving + stopping)
-    assert state.state == "stopped"
-    assert state.stationary_confirmed
-    assert state.start_frame is not None
-    assert state.stop_frame is not None
-    assert state.stop_frame > state.start_frame
+def test_longest_run_picks_longer_of_two_motion_segments():
+    """Two motion segments separated by a LONG gap — pick the longer one.
+
+    Gap is 200 frames, well above the 30-frame merge threshold.
+    """
+    short_motion = _moving_track(start_frame=20, n_frames=40, px_per_frame=10.0)
+    long_motion = _moving_track(
+        start_frame=260, n_frames=180, start_x=600.0, px_per_frame=10.0
+    )
+    history = (
+        _stationary_track(20)
+        + short_motion
+        + _stationary_track(200, x=600.0)
+        + long_motion
+        + _stationary_track(40, x=600.0 + 180 * 10.0)
+    )
+    history = [(i, x, y, h) for i, (_, x, y, h) in enumerate(history)]
+    result = _longest_motion_run(history)
+    assert result is not None
+    start, stop = result
+    duration = stop - start
+    assert duration > 100
 
 
-def test_no_stationary_period_blocks_start():
-    test = TTestTest.__new__(TTestTest)
-    state = _RunState()
-    # Athlete moving from frame 0
-    _feed(test, state, [(i, 200.0 + i * 25.0, 400.0) for i in range(60)])
-    assert state.state == "pre_start"
-    assert not state.stationary_confirmed
+def test_gap_merge_joins_close_motion_segments():
+    """Two motion segments separated by a short pause (10 frames) should
+    merge into one continuous run via the gap-merge step.
+    """
+    seg1 = _moving_track(start_frame=20, n_frames=80, px_per_frame=10.0)
+    last1_x = 200.0 + 80 * 10.0
+    pause = _stationary_track(10, x=last1_x)  # short < _GAP_MERGE_FRAMES
+    seg2 = _moving_track(start_frame=110, n_frames=80, start_x=last1_x, px_per_frame=10.0)
+    last2_x = last1_x + 80 * 10.0
+    history = _stationary_track(20) + seg1 + pause + seg2 + _stationary_track(40, x=last2_x)
+    history = [(i, x, y, h) for i, (_, x, y, h) in enumerate(history)]
+    result = _longest_motion_run(history)
+    assert result is not None
+    start, stop = result
+    # Merged should span seg1 + pause + seg2 (~170 frames), much longer
+    # than either individual segment (~80 frames each).
+    assert stop - start > 130
 
 
-def test_handles_2d_motion():
-    """Athlete moves in both x and y (T-Test has lateral + longitudinal motion)."""
-    test = TTestTest.__new__(TTestTest)
-    state = _RunState()
-    pre = [(i, 320.0, 400.0) for i in range(15)]
-    # Mixed x/y motion over 200 frames (~6.7 s) to clear MIN_RUN_FRAMES
-    moving = [(i, 320.0 + (i - 14) * 2.0, 400.0 + (i - 14) * 1.0)
-              for i in range(15, 215)]
-    last_x = 320.0 + 200 * 2.0
-    last_y = 400.0 + 200 * 1.0
-    stopping = [(i, last_x, last_y) for i in range(215, 280)]
-    _feed(test, state, pre + moving + stopping)
-    assert state.state == "stopped"
+# --- _find_test_run --------------------------------------------------
+
+
+def test_find_test_run_picks_longest_among_tracks():
+    """Two tracks: coach (short motion) + player (long motion). Player wins."""
+    coach_track = _stationary_track(100)
+    coach_track += _moving_track(start_frame=100, n_frames=30, px_per_frame=4.0)
+    coach_track += _stationary_track(70, x=100 * 0 + 30 * 4.0 + 200.0)
+    coach_track = [(i, x, y, h) for i, (_, x, y, h) in enumerate(coach_track)]
+
+    player_track = _stationary_track(100, x=400.0)
+    player_track += _moving_track(
+        start_frame=100, n_frames=300, start_x=400.0, px_per_frame=10.0
+    )
+    player_track += _stationary_track(40, x=400.0 + 300 * 10.0)
+    player_track = [(i, x, y, h) for i, (_, x, y, h) in enumerate(player_track)]
+
+    track_history = {1: coach_track, 2: player_track}
+    result = _find_test_run(track_history, fps=30.0, min_run_frames=180)
+    assert result is not None
+    assert result.track_id == 2
+    assert result.duration_frames >= 180
+
+
+def test_find_test_run_none_below_min_frames():
+    """Both tracks have only short motion -> no candidate."""
+    track = _stationary_track(60) + _moving_track(
+        start_frame=60, n_frames=60, px_per_frame=10.0
+    ) + _stationary_track(60, x=60 * 10.0 + 200.0)
+    track = [(i, x, y, h) for i, (_, x, y, h) in enumerate(track)]
+
+    track_history = {1: track}
+    result = _find_test_run(track_history, fps=30.0, min_run_frames=180)
+    assert result is None
+
+
+def test_find_test_run_returns_none_when_no_tracks():
+    result = _find_test_run({}, fps=30.0, min_run_frames=180)
+    assert result is None

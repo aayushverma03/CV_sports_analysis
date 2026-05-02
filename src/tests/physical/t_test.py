@@ -4,24 +4,29 @@ T-shape course: athlete sprints forward to centre cone, side-shuffles
 left, side-shuffles across right, side-shuffles back to centre, then
 backpedals to start. Total path A->B->C->B->D->B->A.
 
-v1 ships only the scored metric `total_completion_time_s`. Cone detection
-and segment_completion_times are spec-mandated for v1.x, deferred until
-the cone-handoff is more reliable across marker types.
+v1 ships only the scored metric `total_completion_time_s`. Cone
+detection and segment_completion_times are spec-mandated for v1.x,
+deferred until the cone-handoff is more reliable across marker types.
 
-Pattern: same start/stop heuristics as Linear Sprint and Straight Line
-Dribbling — stationary gate before motion onset, adaptive stop detection
-based on peak motion observed during the run.
+Multi-person handling: the user's recordings often contain a coach
+plus the test player in the same frame. Rather than depend on the
+coach having less cumulative bbox area (which fails when the coach is
+in frame longer / closer to camera), we track ALL detected persons
+and post-loop pick the track whose smoothed motion-magnitude has the
+longest contiguous run above a fraction of the track's mean bbox-h.
+The actual test-doer is whoever sprints / shuffles for the longest
+sustained stretch — coaches don't.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
 
 import cv2
 import numpy as np
 
 from src.core.annotation.overlays import (
+    ATHLETE_BBOX,
     draw_bbox,
     draw_hud,
     draw_skeleton,
@@ -37,6 +42,7 @@ from src.tests.base import (
     AnalysisResult,
     AthleteProfile,
     BaseTest,
+    DetectionError,
     MetricValue,
     ProtocolError,
     score_test,
@@ -44,39 +50,57 @@ from src.tests.base import (
 
 # --- Tunables ----------------------------------------------------------
 
-_STATIONARY_WINDOW_FRAMES = 15
-_STATIONARY_RANGE_FRAC = 0.03
-_MOTION_THRESHOLD_FRAC = 0.05
-_MOTION_WINDOW_FRAMES = 5
-_STOP_RATIO_OF_PEAK = 0.15
-_STOP_WINDOW_FRAMES = 30
-# T-Test elite male is 8.8 s; below 6 s is implausible. Require 6 s of
-# run before stop fires, which filters out demo-clip blips and
-# between-run transitions in compilation videos.
-_MIN_RUN_FRAMES = 180         # 6 s @ 30 fps
+# Per-track motion analysis (post-loop longest-run finder).
+# 60-frame (2 s) smoothing absorbs brief cone-touch pauses without
+# breaking the run into shorter segments. T-Test players briefly
+# decelerate at each cone touch (5 of them); a 1 s window wasn't
+# wide enough to bridge those.
+_MOTION_SMOOTH_WINDOW_FRAMES = 60
+# Threshold: per-frame smoothed motion > this fraction of mean bbox-h
+# is "in motion". 3% of a 200-px bbox = 6 px/frame, ~brisk jog speed.
+_MOTION_THRESHOLD_FRAC = 0.03
+# Adjacent above-threshold segments separated by a sub-threshold gap
+# shorter than this are merged — the gap is treated as a brief
+# in-test deceleration, not a real stop.
+_GAP_MERGE_FRAMES = 30
+# T-Test elite male is 8.8 s; below 6 s is implausible.
+_MIN_RUN_FRAMES = 180
+
+# Background tracks too small to consider (likely far-background people).
+_MIN_TRACK_HISTORY_FRAMES = 60         # 2 s minimum history to be considered
+_NON_FOCAL_BBOX_COLOR = (110, 110, 110)
 _POSE_INTERVAL_FRAMES = 3
 _ENDCARD_HOLD_S = 2.5
 
 
-_State = Literal["pre_start", "running", "stopped"]
+# --- State -------------------------------------------------------------
 
 
 @dataclass
 class _RunState:
-    state: _State = "pre_start"
-    start_frame: int | None = None
-    stop_frame: int | None = None
+    # Per-track (track_id -> list of (frame_idx, cx, cy, bbox_h))
+    track_history: dict[int, list[tuple[int, float, float, float]]] = field(
+        default_factory=dict
+    )
     track_area: dict[int, float] = field(default_factory=dict)
-    stationary_confirmed: bool = False
-    center_history: list[tuple[int, float, float, float]] = field(default_factory=list)
-    peak_motion_per_frame: float = 0.0
+
+
+@dataclass(frozen=True)
+class _TestRun:
+    track_id: int
+    start_frame: int
+    stop_frame: int
+
+    @property
+    def duration_frames(self) -> int:
+        return self.stop_frame - self.start_frame
 
 
 # --- Pipeline ----------------------------------------------------------
 
 
 class TTestTest(BaseTest):
-    """T-Test: total time from motion-onset to motion-stop."""
+    """T-Test: multi-track motion analysis -> total completion time."""
 
     test_id = "t-test"
 
@@ -108,7 +132,8 @@ class TTestTest(BaseTest):
 
         state = _RunState()
         n_frames = 0
-        last_pose = None
+        last_focal_pose = None
+        last_focal_id: int | None = None
 
         try:
             for frame in frame_iter(video_path):
@@ -116,45 +141,61 @@ class TTestTest(BaseTest):
                 img = frame.image
 
                 tracked = self._tracker.update(img)
-                runner = self._pick_athlete(tracked, state)
-                pose = last_pose
-                if runner is not None and frame.idx % _POSE_INTERVAL_FRAMES == 0:
-                    pose = self._pose.estimate_bbox(img, runner.bbox_xyxy)
-                    last_pose = pose
+                people = [t for t in tracked if t.class_id == PERSON_CLASS_ID]
 
-                if runner is not None:
-                    state.center_history.append(
-                        (frame.idx, float(runner.center[0]),
-                         float(runner.center[1]), runner.height)
+                # Record every track's center history & cumulative area
+                for p in people:
+                    state.track_history.setdefault(p.track_id, []).append(
+                        (frame.idx, float(p.center[0]),
+                         float(p.center[1]), p.height)
                     )
-                    self._update_state(state, runner, frame.idx)
+                    state.track_area[p.track_id] = (
+                        state.track_area.get(p.track_id, 0.0)
+                        + p.height * p.width
+                    )
 
-                if runner is not None:
-                    draw_bbox(img, runner.bbox_xyxy)
-                if pose is not None:
-                    draw_skeleton(img, pose.keypoints)
-                draw_hud(img, _hud_fields(state, frame.idx, fps))
+                # Live focal = cumulatively-largest track (only for the
+                # in-flight HUD/skeleton; the actual test-doer is decided
+                # post-loop based on longest motion run).
+                focal = _live_focal(people, state)
+                if focal is not None:
+                    if focal.track_id != last_focal_id:
+                        last_focal_pose = None
+                        last_focal_id = focal.track_id
+                    if frame.idx % _POSE_INTERVAL_FRAMES == 0:
+                        last_focal_pose = self._pose.estimate_bbox(
+                            img, focal.bbox_xyxy
+                        )
+
+                # Annotate every detected person; focal gets a brighter box
+                for p in people:
+                    color = (
+                        ATHLETE_BBOX if focal is not None and p.track_id == focal.track_id
+                        else _NON_FOCAL_BBOX_COLOR
+                    )
+                    draw_bbox(img, p.bbox_xyxy, color=color)
+                if last_focal_pose is not None:
+                    draw_skeleton(img, last_focal_pose.keypoints)
+                draw_hud(img, _live_hud_fields(state, frame.idx, fps))
                 writer.write(img)
         except Exception:
             writer.release()
             raise
 
-        if state.start_frame is None:
+        # Post-loop: pick the track with the longest sustained motion run.
+        best = _find_test_run(
+            state.track_history, fps, min_run_frames=_MIN_RUN_FRAMES
+        )
+        if best is None:
             writer.release()
-            if not state.stationary_confirmed:
-                raise ProtocolError(
-                    "athlete was never stationary at the start — re-record "
-                    "with the athlete still behind start cone A for >= 0.5 s"
-                )
-            raise ProtocolError("no start motion detected — athlete never moved")
-        if state.stop_frame is None:
-            writer.release()
+            if not state.track_history:
+                raise DetectionError("no people were detected in the video")
             raise ProtocolError(
-                "could not detect end of run — athlete kept moving until "
-                "video ended; trim the clip past the run completion"
+                "no sustained motion segment found (>= 6 s) on any track — "
+                "could not identify the test run"
             )
 
-        time_s = (state.stop_frame - state.start_frame) / fps
+        time_s = best.duration_frames / fps
         metrics = {
             "total_completion_time_s": MetricValue(raw=time_s, unit="s"),
         }
@@ -189,86 +230,130 @@ class TTestTest(BaseTest):
             ),
         )
 
-    # --- internal helpers ---------------------------------------------
 
-    def _pick_athlete(
-        self, tracked: list[TrackedDetection], state: _RunState
-    ) -> TrackedDetection | None:
-        people = [t for t in tracked if t.class_id == PERSON_CLASS_ID]
+# --- Track-history analysis -------------------------------------------
+
+
+def _find_test_run(
+    track_history: dict[int, list[tuple[int, float, float, float]]],
+    fps: float,
+    min_run_frames: int,
+) -> _TestRun | None:
+    """Across all tracks, find the longest contiguous high-motion run.
+
+    Returns the run as a `_TestRun` keyed by the winning track_id, or
+    None if no track has a qualifying segment.
+    """
+    candidates: list[_TestRun] = []
+    for track_id, history in track_history.items():
+        if len(history) < _MIN_TRACK_HISTORY_FRAMES:
+            continue
+        run = _longest_motion_run(history)
+        if run is None:
+            continue
+        start, stop = run
+        if (stop - start) >= min_run_frames:
+            candidates.append(_TestRun(track_id=track_id, start_frame=start, stop_frame=stop))
+    if not candidates:
+        return None
+    return max(candidates, key=lambda r: r.duration_frames)
+
+
+def _longest_motion_run(
+    history: list[tuple[int, float, float, float]],
+) -> tuple[int, int] | None:
+    """Return (start_frame, stop_frame) of the longest contiguous stretch
+    where smoothed per-frame motion exceeds the bbox-relative threshold.
+    """
+    if len(history) < _MOTION_SMOOTH_WINDOW_FRAMES + 2:
+        return None
+    frame_idxs = [h[0] for h in history]
+    centers = np.array([(h[1], h[2]) for h in history], dtype=float)
+    heights = np.array([h[3] for h in history], dtype=float)
+
+    diffs = np.diff(centers, axis=0)
+    motion = np.linalg.norm(diffs, axis=1)  # length N-1
+
+    window = _MOTION_SMOOTH_WINDOW_FRAMES
+    kernel = np.ones(window, dtype=float) / window
+    smoothed = np.convolve(motion, kernel, mode="same")
+
+    threshold = _MOTION_THRESHOLD_FRAC * float(np.mean(heights))
+    above = smoothed > threshold
+
+    # Merge above-threshold segments separated by short sub-threshold
+    # gaps (treat brief decelerations as part of the same run).
+    merged = above.copy()
+    i = 0
+    while i < len(merged):
+        if not merged[i]:
+            j = i
+            while j < len(merged) and not merged[j]:
+                j += 1
+            gap_len = j - i
+            # Fill the gap only if it's bounded by True on both sides
+            # (i.e., not at the start or end of the trace).
+            if i > 0 and j < len(merged) and gap_len < _GAP_MERGE_FRAMES:
+                merged[i:j] = True
+            i = j
+        else:
+            i += 1
+
+    best_start_i = -1
+    best_len = 0
+    cur_start = -1
+    for i, a in enumerate(merged):
+        if a:
+            if cur_start < 0:
+                cur_start = i
+        else:
+            if cur_start >= 0:
+                cur_len = i - cur_start
+                if cur_len > best_len:
+                    best_start_i = cur_start
+                    best_len = cur_len
+                cur_start = -1
+    if cur_start >= 0:
+        cur_len = len(merged) - cur_start
+        if cur_len > best_len:
+            best_start_i = cur_start
+            best_len = cur_len
+
+    if best_start_i < 0 or best_len < 1:
+        return None
+    # `motion` is offset by 1 from `frame_idxs` (it's the diff between
+    # frame i and i+1). Map back conservatively.
+    start_frame = frame_idxs[best_start_i]
+    stop_frame = frame_idxs[min(best_start_i + best_len, len(frame_idxs) - 1)]
+    return (start_frame, stop_frame)
+
+
+# --- Live (in-loop) helpers -------------------------------------------
+
+
+def _live_focal(
+    people: list[TrackedDetection], state: _RunState
+) -> TrackedDetection | None:
+    """Cumulatively-largest track present in the current frame.
+
+    Used only for live HUD / skeleton — the final result is decided
+    post-loop based on the longest motion run across all tracks.
+    """
+    if not people:
+        return None
+    if state.track_area:
+        dominant_id = max(state.track_area, key=state.track_area.get)
         for t in people:
-            state.track_area[t.track_id] = (
-                state.track_area.get(t.track_id, 0.0) + t.height * t.width
-            )
-        if not people:
-            return None
-        if state.track_area:
-            dominant_id = max(state.track_area, key=state.track_area.get)
-            for t in people:
-                if t.track_id == dominant_id:
-                    return t
-        return max(people, key=lambda t: t.height * t.width)
-
-    def _update_state(
-        self,
-        state: _RunState,
-        runner: TrackedDetection,
-        frame_idx: int,
-    ) -> None:
-        cx = float(runner.center[0])
-        cy = float(runner.center[1])
-        bbox_h = runner.height
-
-        if state.state == "pre_start":
-            if (not state.stationary_confirmed
-                    and len(state.center_history) >= _STATIONARY_WINDOW_FRAMES):
-                recent = state.center_history[-_STATIONARY_WINDOW_FRAMES:]
-                xs = [x for _, x, _, _ in recent]
-                ys = [y for _, _, y, _ in recent]
-                spread = max(
-                    max(xs) - min(xs),
-                    max(ys) - min(ys),
-                )
-                if spread < _STATIONARY_RANGE_FRAC * bbox_h:
-                    state.stationary_confirmed = True
-            if (state.stationary_confirmed
-                    and len(state.center_history) > _MOTION_WINDOW_FRAMES):
-                fi0, x0, y0, _ = state.center_history[-_MOTION_WINDOW_FRAMES - 1]
-                dx = cx - x0
-                dy = cy - y0
-                if (dx * dx + dy * dy) ** 0.5 > _MOTION_THRESHOLD_FRAC * bbox_h:
-                    state.state = "running"
-                    state.start_frame = fi0
-        elif state.state == "running":
-            if len(state.center_history) > _STOP_WINDOW_FRAMES:
-                window = state.center_history[-_STOP_WINDOW_FRAMES - 1:]
-                _, sx, sy, sh = window[0]
-                _, ex, ey, eh = window[-1]
-                disp_center = ((ex - sx) ** 2 + (ey - sy) ** 2) ** 0.5
-                disp_height = abs(eh - sh)
-                total_disp = (disp_center ** 2 + disp_height ** 2) ** 0.5
-                avg_per_frame = total_disp / _STOP_WINDOW_FRAMES
-                if avg_per_frame > state.peak_motion_per_frame:
-                    state.peak_motion_per_frame = avg_per_frame
-                if (state.start_frame is not None
-                        and frame_idx - state.start_frame >= _MIN_RUN_FRAMES
-                        and state.peak_motion_per_frame > 0
-                        and avg_per_frame
-                            < _STOP_RATIO_OF_PEAK * state.peak_motion_per_frame):
-                    state.state = "stopped"
-                    state.stop_frame = window[0][0]
+            if t.track_id == dominant_id:
+                return t
+    return max(people, key=lambda t: t.height * t.width)
 
 
-# --- helpers ----------------------------------------------------------
-
-
-def _hud_fields(state: _RunState, frame_idx: int, fps: float) -> dict[str, str]:
-    if state.state == "pre_start":
-        return {"phase": "ready"}
-    if state.state == "running" and state.start_frame is not None:
-        elapsed = (frame_idx - state.start_frame) / fps
-        return {"phase": "running", "elapsed": f"{elapsed:.2f} s"}
-    if (state.state == "stopped" and state.start_frame is not None
-            and state.stop_frame is not None):
-        t = (state.stop_frame - state.start_frame) / fps
-        return {"phase": "finished", "time": f"{t:.3f} s"}
-    return {"phase": "-"}
+def _live_hud_fields(
+    state: _RunState, frame_idx: int, fps: float
+) -> dict[str, str]:
+    return {
+        "phase": "scanning",
+        "tracks": str(len(state.track_history)),
+        "elapsed": f"{(frame_idx + 1) / fps:.1f} s",
+    }
