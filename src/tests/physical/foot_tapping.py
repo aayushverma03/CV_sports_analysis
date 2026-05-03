@@ -37,6 +37,7 @@ from src.core.annotation.overlays import (
 )
 from src.core.detection.player_detector import PERSON_CLASS_ID
 from src.core.pose.estimator import create_pose_estimator
+from src.core.pose.orientation import ankle_side, body_center_x
 from src.core.tracking.bytetrack_tracker import ByteTrackTracker, TrackedDetection
 from src.core.utils.video_io import frame_iter, video_info
 from src.scoring.grade import format_band
@@ -74,10 +75,11 @@ class _RunState:
     taps: list[_Tap] = field(default_factory=list)
     last_tap_frame: int = -10**6
     track_area: dict[int, float] = field(default_factory=dict)
-    # Per-ankle "currently in proximity zone" state — taps are edge-triggered
-    # (fire on transition from outside-the-zone to inside).
-    left_in_zone: bool = False
-    right_in_zone: bool = False
+    # Zone state per IMAGE-SIDE (not pose-model L/R label) — robust to
+    # pose-label flips. Image-left ankle vs image-right ankle, mapped
+    # to athlete-anatomical L/R when registering the tap.
+    image_left_in_zone: bool = False
+    image_right_in_zone: bool = False
     n_low_pose_conf: int = 0
     n_frames_with_athlete: int = 0
     n_frames_with_ball: int = 0
@@ -141,27 +143,34 @@ class FootTappingTest(BaseTest):
                 if pose is not None and pose.mean_confidence < _POSE_CONF_MIN:
                     state.n_low_pose_conf += 1
 
-                # Edge-triggered tap detection: a tap fires once per "ankle
-                # enters proximity zone" event, not for every frame in zone.
+                # Edge-triggered tap detection (zone state by IMAGE-SIDE).
                 if (ball is not None and pose is not None
                         and runner is not None):
-                    left_now, right_now = _ankles_in_zone(ball, pose, runner)
+                    bcx = body_center_x(pose)
+                    img_left_now, img_right_now = _ankles_in_zone(
+                        ball, pose, runner, bcx
+                    )
                     debounced = (
                         (frame.idx - state.last_tap_frame) >= debounce_frames
                     )
-                    if left_now and not state.left_in_zone and debounced:
-                        state.taps.append(_Tap(frame_idx=frame.idx, side="L"))
+                    new_side: str | None = None
+                    new_x: float | None = None
+                    if img_left_now and not state.image_left_in_zone and debounced:
+                        new_side = "image_left"
+                        # find x of ankle on image-left side that triggered
+                        new_x = _ankle_x_on_side(pose, bcx, image_left=True)
+                    elif img_right_now and not state.image_right_in_zone and debounced:
+                        new_side = "image_right"
+                        new_x = _ankle_x_on_side(pose, bcx, image_left=False)
+                    if new_side is not None and new_x is not None and bcx is not None:
+                        side = ankle_side(new_x, bcx)
+                        state.taps.append(_Tap(frame_idx=frame.idx, side=side))
                         state.last_tap_frame = frame.idx
-                    elif right_now and not state.right_in_zone and debounced:
-                        state.taps.append(_Tap(frame_idx=frame.idx, side="R"))
-                        state.last_tap_frame = frame.idx
-                    state.left_in_zone = left_now
-                    state.right_in_zone = right_now
+                    state.image_left_in_zone = img_left_now
+                    state.image_right_in_zone = img_right_now
                 else:
-                    # Detection lost — clear zone flags so we don't miss the
-                    # next entry edge.
-                    state.left_in_zone = False
-                    state.right_in_zone = False
+                    state.image_left_in_zone = False
+                    state.image_right_in_zone = False
 
                 # Annotation
                 if runner is not None:
@@ -275,24 +284,65 @@ def _ankles_in_zone(
     ball: TrackedDetection,
     pose,
     runner: TrackedDetection,
+    bcx: float | None,
 ) -> tuple[bool, bool]:
-    """Return (left_in_zone, right_in_zone) — each True if that ankle is
-    within touch-proximity of the ball this frame.
+    """Return (image_left_in_zone, image_right_in_zone).
 
-    Used by the edge-triggered tap detector: a tap fires only on the
-    frame an ankle transitions from outside the zone to inside it.
+    Either ankle keypoint within touch-proximity of the ball is
+    classified by IMAGE-X position relative to body-center, not by the
+    pose model's L/R label. This is robust to pose-label flips: the
+    same physical foot always classifies to the same image side.
+
+    If the body center can't be determined (both hips low confidence),
+    we fall back to pose-model labels.
     """
     bx, by = ball.center
     threshold = _TOUCH_PROXIMITY_FRAC * runner.height
-    left_in = False
-    right_in = False
-    if pose.confidence_of("left_ankle") >= _POSE_CONF_MIN:
-        la = pose.position("left_ankle")
-        left_in = float(np.hypot(bx - la[0], by - la[1])) < threshold
-    if pose.confidence_of("right_ankle") >= _POSE_CONF_MIN:
-        ra = pose.position("right_ankle")
-        right_in = float(np.hypot(bx - ra[0], by - ra[1])) < threshold
-    return left_in, right_in
+    img_left_in = False
+    img_right_in = False
+    for kp_name in ("left_ankle", "right_ankle"):
+        if pose.confidence_of(kp_name) < _POSE_CONF_MIN:
+            continue
+        akp = pose.position(kp_name)
+        if float(np.hypot(bx - akp[0], by - akp[1])) >= threshold:
+            continue
+        if bcx is None:
+            # Fallback: trust the pose label
+            if kp_name == "left_ankle":
+                img_right_in = True  # left_ankle is athlete's left = image-right
+            else:
+                img_left_in = True
+        else:
+            if float(akp[0]) < bcx:
+                img_left_in = True
+            else:
+                img_right_in = True
+    return img_left_in, img_right_in
+
+
+def _ankle_x_on_side(
+    pose,
+    bcx: float | None,
+    *,
+    image_left: bool,
+) -> float | None:
+    """Return the image-x of the in-zone ankle on the requested image side."""
+    if bcx is None:
+        return None
+    candidates: list[float] = []
+    for kp_name in ("left_ankle", "right_ankle"):
+        if pose.confidence_of(kp_name) < _POSE_CONF_MIN:
+            continue
+        x = float(pose.position(kp_name)[0])
+        if image_left and x < bcx:
+            candidates.append(x)
+        elif not image_left and x >= bcx:
+            candidates.append(x)
+    if not candidates:
+        return None
+    # If both ankles ended up on the same side (rare — overlapping feet),
+    # pick the one closer to body-center.
+    return min(candidates, key=lambda x: abs(x - bcx))
 
 
 def _hud_fields(state: _RunState, frame_idx: int, fps: float) -> dict[str, str]:

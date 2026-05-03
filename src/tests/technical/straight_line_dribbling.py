@@ -35,6 +35,7 @@ from src.core.annotation.overlays import (
 )
 from src.core.detection.player_detector import PERSON_CLASS_ID
 from src.core.pose.estimator import create_pose_estimator
+from src.core.pose.orientation import ankle_side, body_center_x
 from src.core.tracking.bytetrack_tracker import ByteTrackTracker, TrackedDetection
 from src.core.utils.video_io import frame_iter, video_info
 from src.metrics.ball.touches_per_metre import touches_per_metre
@@ -318,7 +319,14 @@ class StraightLineDribblingTest(BaseTest):
         d_min = min(d_l, d_r)
         threshold = _TOUCH_PROXIMITY_FRAC * runner.height
         if d_min < threshold:
-            side: Literal["L", "R"] = "L" if d_l <= d_r else "R"
+            # Side from image-x of the contacting ankle vs body-center
+            # (robust to pose-model L/R label flips).
+            contact_x = float(la[0]) if d_l <= d_r else float(ra[0])
+            bcx = body_center_x(pose)
+            if bcx is not None:
+                side: Literal["L", "R"] = ankle_side(contact_x, bcx)
+            else:
+                side = "L" if contact_x >= bx else "R"  # fallback
             state.touches.append(_Touch(frame_idx=frame_idx, side=side))
             state.last_touch_frame = frame_idx
 

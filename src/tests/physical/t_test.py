@@ -217,19 +217,50 @@ def _find_test_run(
     fps: float,
     min_run_frames: int,
 ) -> _TestRun | None:
-    candidates: list[_TestRun] = []
-    for track_id, history in track_history.items():
-        if len(history) < _MIN_TRACK_HISTORY_FRAMES:
-            continue
-        run = _longest_motion_run(history)
-        if run is None:
-            continue
-        start, stop = run
-        if (stop - start) >= min_run_frames:
-            candidates.append(_TestRun(track_id=track_id, start_frame=start, stop_frame=stop))
-    if not candidates:
+    """Pick the test runner first (highest peak pixel motion across the
+    video — only the test-doer sprints), then find their longest
+    sustained motion run.
+
+    Why peak-motion as the picker: bbox-relative thresholds incorrectly
+    favoured small/distant tracks (coach in background) because their
+    threshold for "in motion" was tiny, so casual walking aggregated
+    over time. Peak motion is the strongest signal that distinguishes
+    a sprinter from a walking observer regardless of bbox size.
+    """
+    eligible = [
+        (track_id, history)
+        for track_id, history in track_history.items()
+        if len(history) >= _MIN_TRACK_HISTORY_FRAMES
+    ]
+    if not eligible:
         return None
-    return max(candidates, key=lambda r: r.duration_frames)
+    runner_id, runner_history = max(
+        eligible, key=lambda kv: _peak_smoothed_motion(kv[1])
+    )
+    run = _longest_motion_run(runner_history)
+    if run is None:
+        return None
+    start, stop = run
+    if (stop - start) < min_run_frames:
+        return None
+    return _TestRun(track_id=runner_id, start_frame=start, stop_frame=stop)
+
+
+def _peak_smoothed_motion(
+    history: list[tuple[int, float, float, float]],
+) -> float:
+    """Max of the smoothed per-frame motion magnitude for a track.
+
+    Pure pixel space — bigger number = ran/sprinted faster at peak.
+    """
+    if len(history) < _MOTION_SMOOTH_WINDOW_FRAMES + 2:
+        return 0.0
+    centers = np.array([(h[1], h[2]) for h in history], dtype=float)
+    diffs = np.diff(centers, axis=0)
+    motion = np.linalg.norm(diffs, axis=1)
+    kernel = np.ones(_MOTION_SMOOTH_WINDOW_FRAMES) / _MOTION_SMOOTH_WINDOW_FRAMES
+    smoothed = np.convolve(motion, kernel, mode="same")
+    return float(np.max(smoothed))
 
 
 def _longest_motion_run(

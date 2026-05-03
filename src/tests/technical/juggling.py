@@ -32,6 +32,7 @@ from src.core.annotation.overlays import (
 )
 from src.core.detection.player_detector import PERSON_CLASS_ID
 from src.core.pose.estimator import create_pose_estimator
+from src.core.pose.orientation import ankle_side, body_center_x
 from src.core.tracking.bytetrack_tracker import ByteTrackTracker, TrackedDetection
 from src.core.utils.video_io import frame_iter, video_info
 from src.metrics.ball.max_consecutive_touches import max_consecutive_touches
@@ -56,11 +57,14 @@ SPORTS_BALL_CLASS_ID = 32
 # a single juggle has the ball travel through ankle->knee->head and back,
 # triggering 3+ touches per actual contact. Foot/thigh only matches the
 # typical juggling-drill protocol and removes the worst false positives.
-_TOUCH_BODY_PARTS: tuple[tuple[str, str], ...] = (
-    ("left_ankle", "L"),
-    ("right_ankle", "R"),
-    ("left_knee", "L"),
-    ("right_knee", "R"),
+# Body parts to check for ball contact. Side is now derived from
+# image-x position relative to body-center (see _detect_touch),
+# not the keypoint's L/R label, so we only need the keypoint names.
+_TOUCH_BODY_PARTS: tuple[str, ...] = (
+    "left_ankle",
+    "right_ankle",
+    "left_knee",
+    "right_knee",
 )
 _TOUCH_PROXIMITY_FRAC = 0.20    # ball within 20 % of bbox-h of body part
 # Debounce >= half the slowest expected cadence (elite 2.5 Hz -> 0.4 s
@@ -364,24 +368,32 @@ def _detect_touch(
     ball: TrackedDetection,
     pose,
     runner: TrackedDetection,
-) -> Literal["L", "R", "head"] | None:
-    """Return touch side if ball is within proximity of a tracked body part, else None.
+) -> Literal["L", "R"] | None:
+    """Return touch side if any tracked body part is in proximity of the ball.
 
-    Picks the body part with the smallest pixel distance below threshold.
+    Side is derived from the contacting keypoint's IMAGE-X relative to
+    body center (mid-hip), not the pose model's L/R label — robust to
+    pose-model label flips.
     """
     bx, by = ball.center
     threshold = _TOUCH_PROXIMITY_FRAC * runner.height
-    best_side: str | None = None
+    best_x: float | None = None
     best_d = float("inf")
-    for kp_name, side_label in _TOUCH_BODY_PARTS:
+    for kp_name in _TOUCH_BODY_PARTS:
         if pose.confidence_of(kp_name) < _POSE_CONF_MIN:
             continue
         kp = pose.position(kp_name)
         d = float(np.hypot(bx - kp[0], by - kp[1]))
         if d < threshold and d < best_d:
             best_d = d
-            best_side = side_label
-    return best_side  # type: ignore[return-value]
+            best_x = float(kp[0])
+    if best_x is None:
+        return None
+    bcx = body_center_x(pose)
+    if bcx is None:
+        # Fallback: image-side relative to ball x
+        return "R" if best_x < bx else "L"
+    return ankle_side(best_x, bcx)
 
 
 def _hud_fields(state: _RunState, frame_idx: int, fps: float) -> dict[str, str]:

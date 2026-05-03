@@ -99,25 +99,29 @@ def test_gap_merge_joins_close_motion_segments():
 # --- _find_test_run --------------------------------------------------
 
 
-def test_find_test_run_picks_longest_among_tracks():
-    """Two tracks: coach (short motion) + player (long motion). Player wins."""
-    coach_track = _stationary_track(100)
-    coach_track += _moving_track(start_frame=100, n_frames=30, px_per_frame=4.0)
-    coach_track += _stationary_track(70, x=100 * 0 + 30 * 4.0 + 200.0)
+def test_find_test_run_picks_track_with_highest_peak_motion():
+    """Two tracks. Coach: low-velocity walking but a long total motion run.
+    Player: brief but high-velocity sprint.
+    Picker should choose the player by peak-motion criterion, not the
+    coach (whose long-but-slow motion would dominate by total duration).
+    """
+    # Coach: small bbox (h=80), wandering at 4 px/frame for many frames
+    coach_track = _stationary_track(100, x=200.0, h=80.0)
+    coach_track += [(100 + i, 200.0 + i * 4.0, 400.0, 80.0) for i in range(300)]
+    coach_track += _stationary_track(40, x=200.0 + 300 * 4.0, h=80.0)
     coach_track = [(i, x, y, h) for i, (_, x, y, h) in enumerate(coach_track)]
 
-    player_track = _stationary_track(100, x=400.0)
-    player_track += _moving_track(
-        start_frame=100, n_frames=300, start_x=400.0, px_per_frame=10.0
-    )
-    player_track += _stationary_track(40, x=400.0 + 300 * 10.0)
+    # Player: large bbox (h=200), sprint at 30 px/frame (much higher peak)
+    player_track = _stationary_track(100, x=400.0, h=200.0)
+    player_track += [(100 + i, 400.0 + i * 30.0, 400.0, 200.0) for i in range(200)]
+    player_track += _stationary_track(40, x=400.0 + 200 * 30.0, h=200.0)
     player_track = [(i, x, y, h) for i, (_, x, y, h) in enumerate(player_track)]
 
     track_history = {1: coach_track, 2: player_track}
     result = _find_test_run(track_history, fps=30.0, min_run_frames=180)
     assert result is not None
+    # Player wins by peak motion despite coach's longer total duration
     assert result.track_id == 2
-    assert result.duration_frames >= 180
 
 
 def test_find_test_run_none_below_min_frames():
