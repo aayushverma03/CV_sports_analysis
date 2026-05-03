@@ -55,8 +55,19 @@ SPORTS_BALL_CLASS_ID = 32
 
 # --- Tunables ----------------------------------------------------------
 
-_TOUCH_PROXIMITY_FRAC = 0.20    # ball within 20 % of bbox-h of an ankle
-_TOUCH_DEBOUNCE_S = 0.15        # min 0.15 s between taps -> max 6.7 Hz cap
+# Asymmetric proximity zone, scaled to athlete-bbox height.
+# - Horizontal: tight (5% of bbox-h). The active sole-tapping foot's
+#   ankle is directly above the ball; the *standing* foot is ~15-25%
+#   offset to the side. Tight horizontal check excludes the standing
+#   foot so its movements don't add false-positive taps on the other
+#   side.
+# - Vertical: bounded (15% of bbox-h). Wide enough to catch the
+#   resting "ankle ~one-foot-length above ball center" position,
+#   tight enough that a clear lift exits the zone so edge-trigger
+#   re-fires for the next tap.
+_TOUCH_HORIZONTAL_FRAC = 0.08
+_TOUCH_VERTICAL_FRAC = 0.18
+_TOUCH_DEBOUNCE_S = 0.15        # 0.15 s min gap -> 6.7 Hz cap
 _POSE_CONF_MIN = 0.30
 _ENDCARD_HOLD_S = 2.5
 
@@ -297,14 +308,17 @@ def _ankles_in_zone(
     we fall back to pose-model labels.
     """
     bx, by = ball.center
-    threshold = _TOUCH_PROXIMITY_FRAC * runner.height
+    threshold_h = _TOUCH_HORIZONTAL_FRAC * runner.height
+    threshold_v = _TOUCH_VERTICAL_FRAC * runner.height
     img_left_in = False
     img_right_in = False
     for kp_name in ("left_ankle", "right_ankle"):
         if pose.confidence_of(kp_name) < _POSE_CONF_MIN:
             continue
         akp = pose.position(kp_name)
-        if float(np.hypot(bx - akp[0], by - akp[1])) >= threshold:
+        if abs(akp[0] - bx) >= threshold_h:
+            continue
+        if abs(akp[1] - by) >= threshold_v:
             continue
         if bcx is None:
             # Fallback: trust the pose label
