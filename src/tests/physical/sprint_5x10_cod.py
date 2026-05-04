@@ -319,6 +319,16 @@ class Sprint5x10CodTest(BaseTest):
             sx, sy = motion.transform_point(frame.idx, ankle_xy)
             ankle_trajectory.append((frame.idx, sx, sy))
 
+        # Forensic dump for offline rep-detection analysis.
+        ankle_dump = output_dir / f"{self.test_id}.ankles.json"
+        ankle_dump.write_text(json.dumps({
+            "fps": float(fps),
+            "ankles": [
+                [int(fi), float(ax), float(ay)]
+                for (fi, ax, ay) in ankle_trajectory
+            ],
+        }))
+
         if len(ankle_trajectory) < 10:
             raise ProtocolError(
                 "insufficient pose / ankle data on the picked player "
@@ -575,12 +585,14 @@ def _detect_turns(
     t_i is the frame index of the i-th turn. Returns fewer if turns
     couldn't be reliably detected.
 
-    Algorithm: scan the smoothed x signal between start and stop. The
-    first crossing past cone B (going right) ends rep 1. Direction
-    flips, the next crossing past cone A (going left) ends rep 2. And
-    so on, alternating. A "crossing past" requires the athlete's x to
-    overshoot the cone by `_TURN_BEYOND_CONE_FRAC * cone_dist_px`.
+    Algorithm: smooth the x signal, find prominent local extrema with
+    `scipy.signal.find_peaks` (min distance and min prominence both
+    relative to the lane width). Each extremum = one rep boundary
+    (athlete reaching a cone and turning). Robust whether the cones
+    were detected directly or inferred from trajectory extrema.
     """
+    from scipy.signal import find_peaks
+
     in_window = [
         (fi, cx) for (fi, cx, _, _, _) in history
         if start_frame <= fi <= stop_frame
@@ -590,53 +602,34 @@ def _detect_turns(
     fis = np.array([w[0] for w in in_window])
     xs = np.array([w[1] for w in in_window], dtype=float)
 
-    # Light smoothing on x to suppress per-frame jitter without delaying
-    # turn detection materially.
-    win = max(5, int(round(0.2 * fps)) | 1)  # ~0.2 s, odd
+    # Smooth strongly enough that small wobbles don't register as
+    # extrema; ~0.5 s window is short relative to a sprint rep
+    # (1.5-3 s) but long enough to suppress single-step bbox jitter.
+    win = max(7, int(round(0.5 * fps)) | 1)
     if win < len(xs):
         kernel = np.ones(win) / win
         xs = np.convolve(xs, kernel, mode="same")
 
-    overshoot = _TURN_BEYOND_CONE_FRAC * cone_dist_px
-    debounce = int(round(_TURN_DEBOUNCE_S * fps))
+    # Distance: at least half a sprint-rep apart, in frames.
+    min_distance = max(int(round(0.8 * fps)), 5)
+    # Prominence: at least 15% of the lane width. Ankle trajectory has
+    # more high-frequency wobble than bbox center but reaches peaks at
+    # the actual cones; a looser prominence avoids missing partial reps
+    # where the athlete cuts the turn slightly short.
+    min_prominence = 0.15 * cone_dist_px
 
-    # Auto-detect rep 1 direction. The first significant displacement
-    # from xs[0] tells us whether the athlete heads toward cone B
-    # (going right) or cone A (going left) first.
-    cone_left_x, cone_right_x = cone_a[0], cone_b[0]
-    initial_x = xs[0]
-    direction = 0  # +1 = going toward cone_right, -1 = going toward cone_left
-    for x in xs:
-        if x - initial_x > overshoot:
-            direction = 1
-            break
-        if initial_x - x > overshoot:
-            direction = -1
-            break
-    if direction == 0:
-        # Athlete never moved enough to declare a direction.
+    maxima, _ = find_peaks(xs, distance=min_distance, prominence=min_prominence)
+    minima, _ = find_peaks(-xs, distance=min_distance, prominence=min_prominence)
+    extrema_idxs = sorted(set(maxima.tolist() + minima.tolist()))
+
+    if not extrema_idxs:
         return []
-    expected_target = cone_right_x if direction > 0 else cone_left_x
-    target_overshoot_sign = direction
 
     boundaries: list[int] = [int(fis[0])]
-    last_turn_idx = -10**9
-    for i, x in enumerate(xs):
-        if (fis[i] - last_turn_idx) < debounce:
-            continue
-        delta = (x - expected_target) * target_overshoot_sign
-        if delta >= overshoot:
-            boundaries.append(int(fis[i]))
-            last_turn_idx = fis[i]
-            # Flip target for next rep.
-            if expected_target == cone_right_x:
-                expected_target = cone_left_x
-                target_overshoot_sign = -1
-            else:
-                expected_target = cone_right_x
-                target_overshoot_sign = 1
-            if len(boundaries) == _N_SHUTTLES + 1:
-                break
+    for idx in extrema_idxs:
+        boundaries.append(int(fis[idx]))
+        if len(boundaries) == _N_SHUTTLES + 1:
+            break
     return boundaries
 
 
