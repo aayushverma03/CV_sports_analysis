@@ -106,6 +106,30 @@ Recommended order — each row gets its own session:
   or scores each separately. Unblocks the T-Test demo video that
   currently has to fail-loud due to ID-swap contamination.
 
+### Phase 4.9 follow-ups (5×10m Sprint with COD)
+
+The pipeline is end-to-end functional but has known precision gaps that
+don't affect scored metrics on the demo video. To fix in a later session:
+
+- [ ] **Peak acceleration / deceleration overestimate** (~100 m/s²
+  reported vs ~5 m/s² physical max). Bbox-center jitter survives the
+  current Savitzky-Golay smoothing on position. Fix options: track the
+  pose mid-hip instead of bbox center; or apply a tighter outlier filter
+  before differentiation (already capping speed at 15 m/s, but accel
+  uses raw differentiation of capped speed).
+- [ ] **Cone detection often finds < 4 clusters on yellow-pole + disk
+  setups** because YOLO-World's class prompts split detections between
+  pole-top and base-disk, or miss poles partially out of frame. Pipeline
+  currently falls back to trajectory-extrema calibration (works), but a
+  proper 4-cone detection would tighten calibration accuracy. Fix: tune
+  the prompt set + add aspect-ratio post-filtering in MarkerDetector to
+  prefer tall thin pole detections; or detect the disk base as a
+  separate class and combine.
+- [ ] **Camera-motion ORB anchor can fail when frame 0's view is
+  completely panned away.** Currently falls back to LK chaining (which
+  drifts). A multi-anchor scheme (re-anchor against the last successful
+  anchor frame, not just frame 0) would be more robust on long videos.
+
 ## Phase 6 — AI summary layer
 
 - [ ] `src/ai_summary/summarizer.py` — OpenAI client (`gpt-5-mini`) with retries
