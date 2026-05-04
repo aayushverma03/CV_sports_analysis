@@ -14,9 +14,18 @@ Metrics scored: total_completion_time_s, sprint_best_s,
 fatigue_drop_off_pct. Informational: rep_times_s, total_distance_m,
 average_speed_ms, max_speed_ms, peak_acceleration_ms2,
 peak_deceleration_ms2.
+
+Camera-pan compensation: the operator may pan the camera to follow
+the athlete. Pass 1 estimates a per-frame affine transform from
+background features (everything outside the athlete bbox) and
+remaps both athlete bbox centers and cone detections into frame 0's
+pixel space. All downstream math (cone clustering, calibration, turn
+detection) runs on stabilized coordinates, so the pipeline produces
+correct metrics whether the camera is static or follows.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,15 +39,13 @@ from src.core.annotation.overlays import (
     render_endcard,
 )
 from src.core.calibration.camera_calibration import CalibrationError
+from src.core.calibration.camera_motion import CameraMotion
 from src.core.detection.marker_detector import MarkerDetector
 from src.core.detection.player_detector import PERSON_CLASS_ID
 from src.core.pose.estimator import create_pose_estimator
 from src.core.tracking.bytetrack_tracker import ByteTrackTracker
 from src.core.tracking.player_picker import pick_player
-from src.core.tracking.run_window import (
-    cluster_object_positions,
-    find_run_on_track,
-)
+from src.core.tracking.run_window import cluster_object_positions
 from src.core.utils.video_io import frame_iter, video_info
 from src.metrics.motion.average_speed_ms import average_speed_ms
 from src.metrics.motion.max_speed_ms import max_speed_ms
@@ -63,18 +70,32 @@ _CONE_SEPARATION_M = 10.0
 _N_SHUTTLES = 5
 _TOTAL_DISTANCE_M = _CONE_SEPARATION_M * _N_SHUTTLES
 
-# Sprint-best is on the order of 1.8-3.0 s; the slowest plausible
-# completion of all 5 reps is ~25 s. Anything below 8 s implies bad
-# turn detection or a non-protocol video.
-_MIN_RUN_FRAMES = 240          # 8 s @ 30 fps; below this is implausible
+# A picked track shorter than this can't contain 5 reps.
+_MIN_TRACK_HISTORY_FRAMES = 240    # 8 s @ 30 fps
 
-_MIN_TRACK_HISTORY_FRAMES = 60
 _POSE_INTERVAL_FRAMES = 3
 _ENDCARD_HOLD_S = 2.5
 
-# Cone sampling — same shape as t_test/illinois.
-_CONE_SAMPLE_STRIDE = 60
-_CONE_CLUSTER_RADIUS_PX = 40.0
+# Motion-onset detection: the first frame where the athlete's x has
+# moved this fraction of the cone separation toward cone B is the
+# real start of rep 1 (the picker's track usually includes a pre-start
+# standing period that would otherwise inflate rep 1's time).
+_MOTION_ONSET_FRAC = 0.10
+
+# Marker sampling — sport-hall yellow slalom poles need a richer prompt
+# vocabulary and lower confidence than the registry default. Stride is
+# also tighter than the agility tests because 5x10m videos are short
+# (15-25 s) and we need enough samples for the cluster threshold.
+_MARKER_PROMPTS = (
+    "yellow slalom pole",
+    "agility pole",
+    "yellow vertical pole",
+    "orange traffic cone",
+    "training cone",
+)
+_MARKER_CONFIDENCE = 0.05
+_CONE_SAMPLE_STRIDE = 30
+_CONE_CLUSTER_RADIUS_PX = 60.0
 _CONE_MIN_DETECTIONS = 3
 
 # Turn detection: a turn fires when the athlete's smoothed x crosses
@@ -85,11 +106,6 @@ _TURN_BEYOND_CONE_FRAC = 0.10  # athlete must overshoot cone by 10% of cone-pair
 # cone from registering as multiple turns. Sprint-best 1.8 s -> 54 frames
 # at 30 fps; use a generous floor of 1.0 s.
 _TURN_DEBOUNCE_S = 1.0
-
-# Single-athlete agility-style video: brief tracker hiccups should not
-# break the run. See illinois_agility.py for the same rationale.
-_TELEPORT_FRAC = 5.0
-
 
 # --- State -------------------------------------------------------------
 
@@ -132,19 +148,28 @@ class Sprint5x10CodTest(BaseTest):
         fps = info.fps
         out_path = output_dir / f"{self.test_id}.mp4"
 
-        # === PASS 1: detect + track all persons; sample cone detections ===
-        track_history: dict[int, list[tuple[int, float, float, float, float]]] = {}
+        # === PASS 1: detect + track + camera-motion estimation ===
+        # Track histories store STABILIZED coords (frame-0 pixel space)
+        # so cone clustering, calibration, and turn detection all work
+        # whether the camera is static or pans to follow the athlete.
+        track_history_raw: dict[
+            int, list[tuple[int, float, float, float, float]]
+        ] = {}
         track_bboxes: dict[int, dict[int, np.ndarray]] = {}
-        cone_detections: list[tuple[float, float]] = []
+        cone_detections_per_frame: list[tuple[int, float, float]] = []
         n_frames = 0
+        motion = CameraMotion()
 
         for frame in frame_iter(video_path):
             n_frames += 1
             tracked = self._tracker.update(frame.image)
+            person_bboxes_this_frame: list[np.ndarray] = []
             for p in tracked:
                 if p.class_id != PERSON_CLASS_ID:
                     continue
-                track_history.setdefault(p.track_id, []).append(
+                person_bboxes_this_frame.append(p.bbox_xyxy)
+                # Raw pixel-space record; stabilized later in one pass.
+                track_history_raw.setdefault(p.track_id, []).append(
                     (frame.idx, float(p.center[0]), float(p.center[1]),
                      p.height, p.width)
                 )
@@ -153,13 +178,44 @@ class Sprint5x10CodTest(BaseTest):
                 )
             if frame.idx % _CONE_SAMPLE_STRIDE == 0:
                 if self._marker is None:
-                    self._marker = MarkerDetector()
-                for det in self._marker.detect(frame.image):
-                    cone_detections.append(
-                        (float(det.center[0]), float(det.center[1]))
+                    self._marker = MarkerDetector(
+                        prompts=list(_MARKER_PROMPTS),
+                        confidence=_MARKER_CONFIDENCE,
                     )
+                for det in self._marker.detect(frame.image):
+                    cone_detections_per_frame.append((
+                        frame.idx,
+                        float(det.center[0]),
+                        float(det.center[1]),
+                    ))
+            # Camera motion: mask out all persons in frame so we only
+            # track static background features.
+            motion.update(
+                frame.idx, frame.image,
+                exclude_bboxes_xyxy=person_bboxes_this_frame,
+            )
 
-        # === Cone-pair calibration ===
+        # === Stabilize track history + cone detections to frame-0 coords ===
+        track_history: dict[
+            int, list[tuple[int, float, float, float, float]]
+        ] = {}
+        for tid, hist in track_history_raw.items():
+            stabilized: list[tuple[int, float, float, float, float]] = []
+            for fi, cx, cy, h, w in hist:
+                sx, sy = motion.transform_point(fi, (cx, cy))
+                stabilized.append((fi, sx, sy, h, w))
+            track_history[tid] = stabilized
+
+        cone_detections: list[tuple[float, float]] = [
+            motion.transform_point(fi, (cx, cy))
+            for (fi, cx, cy) in cone_detections_per_frame
+        ]
+
+        # === Calibration ===
+        # Preferred: cone-pair geometry (two well-separated detected
+        # clusters). Fallback: athlete x-trajectory extrema (the player
+        # provably reaches each cone during the test; the trajectory's
+        # x-extent in stabilized space spans 10 m by protocol).
         cone_positions = cluster_object_positions(
             cone_detections,
             radius_px=_CONE_CLUSTER_RADIUS_PX,
@@ -167,18 +223,36 @@ class Sprint5x10CodTest(BaseTest):
         )
         print(f"[5x10m-cod] {len(cone_positions)} cone clusters detected")
         cone_a, cone_b = _pick_cone_pair(cone_positions)
-        if cone_a is None or cone_b is None:
-            raise CalibrationError(
-                f"need 2 cones for 10 m calibration; found "
-                f"{len(cone_positions)} clusters — check cone visibility "
-                "and YOLO-World class prompts"
-            )
-        cone_dist_px = float(np.hypot(cone_b[0] - cone_a[0], cone_b[1] - cone_a[1]))
-        if cone_dist_px <= 0:
-            raise CalibrationError("degenerate cone pair: zero separation")
-        px_per_m = cone_dist_px / _CONE_SEPARATION_M
-        print(f"[5x10m-cod] calibration: {px_per_m:.1f} px/m "
-              f"(cone-pair = {cone_dist_px:.0f} px = 10 m)")
+
+        eligible_pair = (
+            cone_a is not None and cone_b is not None
+            and _is_horizontal_pair(cone_a, cone_b)
+        )
+        if eligible_pair:
+            cone_dist_px = float(np.hypot(
+                cone_b[0] - cone_a[0], cone_b[1] - cone_a[1]
+            ))
+            px_per_m = cone_dist_px / _CONE_SEPARATION_M
+            print(f"[5x10m-cod] calibration: {px_per_m:.1f} px/m "
+                  f"(cone-pair = {cone_dist_px:.0f} px = 10 m)")
+        else:
+            # Trajectory-extrema fallback. Pick the longest-history
+            # track as a calibration proxy (the picker hasn't run yet).
+            longest = max(track_history.values(), key=len, default=[])
+            xs = [cx for (_, cx, _, _, _) in longest]
+            if len(xs) < _MIN_TRACK_HISTORY_FRAMES:
+                raise CalibrationError(
+                    "no horizontally-aligned cone pair AND no track "
+                    "long enough for trajectory-extrema fallback"
+                )
+            x_min, x_max = min(xs), max(xs)
+            cone_dist_px = x_max - x_min
+            px_per_m = cone_dist_px / _CONE_SEPARATION_M
+            cy_avg = float(np.mean([cy for (_, _, cy, _, _) in longest]))
+            cone_a = (x_min, cy_avg)
+            cone_b = (x_max, cy_avg)
+            print(f"[5x10m-cod] trajectory-extrema calibration: "
+                  f"{px_per_m:.1f} px/m (lane span = {cone_dist_px:.0f} px)")
 
         # === Pick THE player track ===
         object_positions = (
@@ -199,24 +273,39 @@ class Sprint5x10CodTest(BaseTest):
                 "yielded a winner"
             )
 
-        run_window = find_run_on_track(
-            track_history[player_track_id],
-            min_run_frames=_MIN_RUN_FRAMES,
-            teleport_frac=_TELEPORT_FRAC,
-        )
-        if run_window is None:
-            raise ProtocolError(
-                f"player track {player_track_id} found but no sustained "
-                f"motion segment >= {_MIN_RUN_FRAMES / fps:.0f} s — "
-                "could not time the run"
-            )
-        start_frame, stop_frame = run_window
+        # Forensic dump of picked-track + cones for offline analysis.
+        dump_path = output_dir / f"{self.test_id}.dump.json"
+        dump_path.write_text(json.dumps({
+            "fps": float(fps),
+            "cone_a": list(cone_a),
+            "cone_b": list(cone_b),
+            "cone_dist_px": cone_dist_px,
+            "px_per_m": px_per_m,
+            "picked_track_id": int(player_track_id),
+            "history": [
+                [int(fi), float(cx), float(cy), float(h), float(w)]
+                for (fi, cx, cy, h, w) in track_history[player_track_id]
+            ],
+        }))
 
-        # === Detect 4 turns -> 5 rep boundaries ===
+        # The bbox-h-relative motion threshold used by find_run_on_track
+        # doesn't apply here: in typical sport-hall framing the lane width
+        # (10 m -> ~135 px in this video) is smaller than the athlete's
+        # bbox-h, so per-frame motion never exceeds the 3% threshold.
+        # Instead, use the whole picked track and rely on motion-onset +
+        # turn detection to bound the run window honestly.
+        history = track_history[player_track_id]
+        track_start_fi = history[0][0]
+        track_stop_fi = history[-1][0]
+
+        # Detect rep boundaries; first boundary becomes the test start.
         rep_boundaries = _detect_turns(
-            history=track_history[player_track_id],
-            start_frame=start_frame,
-            stop_frame=stop_frame,
+            history=history,
+            start_frame=_motion_onset_frame(
+                history=history,
+                onset_px=_MOTION_ONSET_FRAC * cone_dist_px,
+            ),
+            stop_frame=track_stop_fi,
             cone_a=cone_a,
             cone_b=cone_b,
             cone_dist_px=cone_dist_px,
@@ -311,6 +400,23 @@ class Sprint5x10CodTest(BaseTest):
 # --- Cone helpers -----------------------------------------------------
 
 
+def _is_horizontal_pair(
+    a: tuple[float, float], b: tuple[float, float],
+    *,
+    max_y_to_x_ratio: float = 0.4,
+) -> bool:
+    """A cone pair on a horizontal lane should differ much more in x
+    than in y. Reject pairs that are mostly diagonal — these are usually
+    pole-top vs disk-base detections of the same physical pole, or
+    other false matches.
+    """
+    dx = abs(b[0] - a[0])
+    dy = abs(b[1] - a[1])
+    if dx == 0:
+        return False
+    return (dy / dx) <= max_y_to_x_ratio
+
+
 def _pick_cone_pair(
     clusters: list[tuple[float, float]],
 ) -> tuple[tuple[float, float] | None, tuple[float, float] | None]:
@@ -333,6 +439,31 @@ def _pick_cone_pair(
                 best = (dx, clusters[i], clusters[j])
     a, b = best[1], best[2]
     return (a, b) if a[0] <= b[0] else (b, a)
+
+
+# --- Start / turn detection -------------------------------------------
+
+
+def _motion_onset_frame(
+    *,
+    history: list[tuple[int, float, float, float, float]],
+    onset_px: float,
+) -> int:
+    """First frame whose x has moved away from the initial x by `onset_px`.
+
+    Picker-selected tracks usually contain a pre-start standing period
+    while the athlete is in starting position. Trimming to the first
+    frame of meaningful motion keeps rep 1's timing honest. Works
+    regardless of which cone the athlete starts near (or starts in
+    between).
+    """
+    if not history:
+        return 0
+    first_fi, first_cx, _, _, _ = history[0]
+    for fi, cx, _, _, _ in history:
+        if abs(cx - first_cx) >= onset_px:
+            return int(fi)
+    return int(first_fi)
 
 
 # --- Turn detection ----------------------------------------------------
@@ -379,12 +510,26 @@ def _detect_turns(
     overshoot = _TURN_BEYOND_CONE_FRAC * cone_dist_px
     debounce = int(round(_TURN_DEBOUNCE_S * fps))
 
-    # Establish start direction from the first significant motion.
+    # Auto-detect rep 1 direction. The first significant displacement
+    # from xs[0] tells us whether the athlete heads toward cone B
+    # (going right) or cone A (going left) first.
     cone_left_x, cone_right_x = cone_a[0], cone_b[0]
-    boundaries: list[int] = [int(fis[0])]
-    expected_target = cone_right_x  # rep 1 target
-    target_overshoot_sign = 1       # going right -> overshoot is x > target
+    initial_x = xs[0]
+    direction = 0  # +1 = going toward cone_right, -1 = going toward cone_left
+    for x in xs:
+        if x - initial_x > overshoot:
+            direction = 1
+            break
+        if initial_x - x > overshoot:
+            direction = -1
+            break
+    if direction == 0:
+        # Athlete never moved enough to declare a direction.
+        return []
+    expected_target = cone_right_x if direction > 0 else cone_left_x
+    target_overshoot_sign = direction
 
+    boundaries: list[int] = [int(fis[0])]
     last_turn_idx = -10**9
     for i, x in enumerate(xs):
         if (fis[i] - last_turn_idx) < debounce:
@@ -396,7 +541,7 @@ def _detect_turns(
             # Flip target for next rep.
             if expected_target == cone_right_x:
                 expected_target = cone_left_x
-                target_overshoot_sign = -1   # going left -> x < target
+                target_overshoot_sign = -1
             else:
                 expected_target = cone_right_x
                 target_overshoot_sign = 1
@@ -422,11 +567,30 @@ def _compute_metrics(
     ]
     fis = np.array([w[0] for w in in_window])
     centers_px = np.array([(w[1], w[2]) for w in in_window], dtype=float)
+
+    # Smooth bbox-center positions before differentiating. Bbox detection
+    # has frame-to-frame jitter (the box snaps tighter or looser to the
+    # body silhouette); without smoothing, those jitters appear as
+    # impossible peak speeds (50+ m/s) and accelerations (>500 m/s^2).
+    # Window must be short enough to preserve real direction changes
+    # (~0.4 s rep transitions) — 7 frames at 30 fps = 0.23 s.
+    pos_window = max(7, int(round(0.25 * fps)) | 1)
+    if len(centers_px) > pos_window:
+        from src.core.utils.smoothing import savgol_smooth
+        centers_px = np.column_stack([
+            savgol_smooth(centers_px[:, 0], window=pos_window, polyorder=3),
+            savgol_smooth(centers_px[:, 1], window=pos_window, polyorder=3),
+        ])
     centers_m = centers_px / px_per_m
 
     # Per-frame instantaneous speed (m/s) from successive position deltas.
     diffs_m = np.diff(centers_m, axis=0)
     inst_speed = np.linalg.norm(diffs_m, axis=1) * fps  # m/frame * fps = m/s
+    # Bbox-center jitter (panning cameras, pose / detection wobble) can
+    # push a single frame's "speed" past 50 m/s — physically impossible
+    # for humans (Bolt's peak: ~12 m/s). Cap at 15 m/s before peak /
+    # accel calculations so jitter doesn't dominate the result.
+    inst_speed = np.clip(inst_speed, 0.0, 15.0)
     if len(inst_speed) < 11:
         inst_speed = np.pad(inst_speed, (0, 11 - len(inst_speed)))
 

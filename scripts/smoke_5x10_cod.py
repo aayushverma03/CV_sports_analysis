@@ -16,7 +16,7 @@ from src.tests.physical.sprint_5x10_cod import Sprint5x10CodTest  # noqa: E402
 
 DEFAULT_VIDEO = (
     ROOT / "data" / "01. Physical Capabilities" / "5 x 10 m Sprint with COD"
-    / "5 _ 10 sprint.mp4"
+    / "VID_20251118_133941531.mp4"
 )
 
 
