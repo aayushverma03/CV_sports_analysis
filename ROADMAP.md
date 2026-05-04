@@ -95,6 +95,16 @@ Recommended order — each row gets its own session:
 - [ ] HUD ticker design pass (consistent typography, colour-blind safe palette)
 - [ ] End-card layout: scores + summary headline
 - [ ] Per-test overlay variations (gates for sprints, cone path for agility, ball trail for dribbling)
+- [ ] Preprocessing video clipper (auto-trim to test-active segments).
+  Detect sustained athletic motion across the whole video using the
+  teleport-aware sustained-motion logic from `core/tracking/run_window.py`,
+  applied per-frame globally rather than per-track. Cone/ball/marker
+  presence near a moving athlete is a strong positive signal (YOLO-World
+  already detects cones); a low-stride pose cue can distinguish
+  test-posture (sprint/jump/weave) from standing still. Multi-attempt
+  videos yield multiple clipped segments — caller picks which to score
+  or scores each separately. Unblocks the T-Test demo video that
+  currently has to fail-loud due to ID-swap contamination.
 
 ## Phase 6 — AI summary layer
 

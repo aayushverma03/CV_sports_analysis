@@ -1,4 +1,4 @@
-"""Straight Line Dribbling pipeline (view-aware).
+"""Straight Line Dribbling pipeline (view-aware, 2-pass).
 
 Course: athletes dribble through a line of cones / flat dome markers.
 The pipeline auto-classifies the camera view from the athlete's run-
@@ -6,6 +6,14 @@ window trajectory and adjusts the metric set accordingly:
 
 - side-on   -> athlete moves laterally; pixel-x range is large
 - rear-view -> athlete moves into depth; bbox-h shrinks more than x changes
+
+Two-pass design with shared player_picker (multi-person handling):
+- Pass 1: detect + track all persons + balls; record per-track person
+  history and per-frame ball positions.
+- Post-loop: pick the player track via shared player_picker (area
+  dominance → ball proximity + longest sustained motion fallback).
+- Pass 2: re-iterate; drive the run-state machine (start / stop
+  detection) and touch detection on the picked player only.
 
 End-of-test detection is heuristic — athlete pixel velocity below
 threshold for >= 1 s after the run started — because the flat dome
@@ -37,6 +45,7 @@ from src.core.detection.player_detector import PERSON_CLASS_ID
 from src.core.pose.estimator import create_pose_estimator
 from src.core.pose.orientation import ankle_side, body_center_x
 from src.core.tracking.bytetrack_tracker import ByteTrackTracker, TrackedDetection
+from src.core.tracking.player_picker import pick_player
 from src.core.utils.video_io import frame_iter, video_info
 from src.metrics.ball.touches_per_metre import touches_per_metre
 from src.scoring.grade import format_band
@@ -45,6 +54,7 @@ from src.tests.base import (
     AnalysisResult,
     AthleteProfile,
     BaseTest,
+    DetectionError,
     MetricValue,
     ProtocolError,
     score_test,
@@ -63,6 +73,9 @@ _TOUCH_PROXIMITY_FRAC = 0.30    # ball within 30 % of bbox-h of an ankle = touch
 _TOUCH_DEBOUNCE_S = 0.20
 _POSE_CONF_MIN = 0.30
 _ENDCARD_HOLD_S = 2.5
+
+# Background tracks too short to be the focal player.
+_MIN_TRACK_HISTORY_FRAMES = 60
 
 # View classification thresholds (run-window pixel ranges, normalized to frame size)
 _VIEW_SIDE_ON_X_FRAC = 0.30     # athlete pixel-x covers >= 30 % of frame width
@@ -86,7 +99,6 @@ class _RunState:
     state: _State = "pre_start"
     start_frame: int | None = None
     stop_frame: int | None = None
-    athlete_track_id: int | None = None
     # History buffers — pixel-x and bbox-h for view classification + stop detection
     center_history: list[tuple[int, float, float, float]] = field(default_factory=list)
     # (frame_idx, cx, cy, bbox_h)
@@ -129,6 +141,46 @@ class StraightLineDribblingTest(BaseTest):
         fps = info.fps
         out_path = output_dir / f"{self.test_id}.mp4"
 
+        # === PASS 1: detect + track all persons + balls ===
+        track_history: dict[int, list[tuple[int, float, float, float, float]]] = {}
+        people_per_frame: dict[int, list[TrackedDetection]] = {}
+        balls_per_frame: dict[int, list[TrackedDetection]] = {}
+        n_frames = 0
+
+        for frame in frame_iter(video_path):
+            n_frames += 1
+            tracked = self._tracker.update(frame.image)
+            for p in tracked:
+                if p.class_id == PERSON_CLASS_ID:
+                    track_history.setdefault(p.track_id, []).append(
+                        (frame.idx, float(p.center[0]), float(p.center[1]),
+                         p.height, p.width)
+                    )
+                    people_per_frame.setdefault(frame.idx, []).append(p)
+                elif p.class_id == SPORTS_BALL_CLASS_ID:
+                    balls_per_frame.setdefault(frame.idx, []).append(p)
+
+        # === Pick THE player track (area dominance, then ball proximity) ===
+        ball_positions = {
+            fi: [(b.center[0], b.center[1]) for b in balls]
+            for fi, balls in balls_per_frame.items()
+        }
+        player_track_id = pick_player(
+            track_history,
+            object_positions=ball_positions or None,
+            min_history_frames=_MIN_TRACK_HISTORY_FRAMES,
+            verbose=True,
+        )
+        if player_track_id is None:
+            if not track_history:
+                raise DetectionError("no people were detected in the video")
+            raise ProtocolError(
+                "could not identify a single player track — "
+                "neither pixel-area dominance nor ball-proximity fallback "
+                "yielded a winner"
+            )
+
+        # === PASS 2: re-iterate, run-state machine on picked player only ===
         writer = cv2.VideoWriter(
             str(out_path),
             cv2.VideoWriter_fourcc(*"mp4v"),
@@ -139,17 +191,15 @@ class StraightLineDribblingTest(BaseTest):
             raise ProtocolError(f"could not open VideoWriter at {out_path}")
 
         state = _RunState()
-        n_frames = 0
         debounce_frames = int(round(_TOUCH_DEBOUNCE_S * fps))
 
         try:
             for frame in frame_iter(video_path):
-                n_frames += 1
                 img = frame.image
-
-                tracked = self._tracker.update(img)
-                runner = self._pick_athlete(tracked, state)
-                ball = _pick_ball(tracked)
+                runner = _find_track_in_frame(
+                    people_per_frame.get(frame.idx, []), player_track_id
+                )
+                ball = _pick_ball(balls_per_frame.get(frame.idx, []))
                 if runner is not None:
                     state.n_frames_with_athlete += 1
                 if ball is not None:
@@ -236,20 +286,6 @@ class StraightLineDribblingTest(BaseTest):
         )
 
     # --- internal helpers ---------------------------------------------
-
-    def _pick_athlete(
-        self, tracked: list[TrackedDetection], state: _RunState
-    ) -> TrackedDetection | None:
-        people = [t for t in tracked if t.class_id == PERSON_CLASS_ID]
-        if not people:
-            return None
-        if state.athlete_track_id is None:
-            state.athlete_track_id = people[0].track_id
-            return people[0]
-        for t in people:
-            if t.track_id == state.athlete_track_id:
-                return t
-        return None
 
     def _update_state(
         self,
@@ -351,9 +387,18 @@ class StraightLineDribblingTest(BaseTest):
 # --- module-level helpers ---------------------------------------------
 
 
-def _pick_ball(tracked: list[TrackedDetection]) -> TrackedDetection | None:
+def _find_track_in_frame(
+    people: list[TrackedDetection], track_id: int
+) -> TrackedDetection | None:
+    """Locate the picked-track-id detection in this frame's people."""
+    for p in people:
+        if p.track_id == track_id:
+            return p
+    return None
+
+
+def _pick_ball(balls: list[TrackedDetection]) -> TrackedDetection | None:
     """Highest-confidence sports ball detection, or None."""
-    balls = [t for t in tracked if t.class_id == SPORTS_BALL_CLASS_ID]
     return balls[0] if balls else None
 
 

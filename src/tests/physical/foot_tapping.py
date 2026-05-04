@@ -3,12 +3,13 @@
 Athlete stands over a ball and taps it alternately with each foot for
 30 s. Measures lower-limb cyclic speed.
 
-Pipeline reuses the juggling patterns:
-- ByteTrack on COCO 0 (person) + 32 (sports_ball), single inference
-- cumulative-area athlete picker (focal player = closest to camera for
-  most of the video) with largest-in-frame fallback
-- closest-ball pick (filters out other balls in frame)
-- ankle-only touch detection with debounce
+Two-pass design (mandatory shared player_picker — multi-person):
+- Pass 1: ByteTrack on COCO 0 (person) + 32 (sports_ball), record
+  per-track person history and per-frame ball positions.
+- Post-loop: pick the player track via shared player_picker (area
+  dominance → ball proximity + longest sustained motion fallback).
+- Pass 2: re-iterate; pose + tap detection only on the picked player's
+  bbox; ball is per-frame closest-to-player.
 
 Metrics:
 - total_taps (scored)
@@ -26,7 +27,6 @@ from pathlib import Path
 from typing import Literal
 
 import cv2
-import numpy as np
 
 from src.core.annotation.overlays import (
     BALL,
@@ -39,6 +39,7 @@ from src.core.detection.player_detector import PERSON_CLASS_ID
 from src.core.pose.estimator import create_pose_estimator
 from src.core.pose.orientation import ankle_side, body_center_x
 from src.core.tracking.bytetrack_tracker import ByteTrackTracker, TrackedDetection
+from src.core.tracking.player_picker import pick_player
 from src.core.utils.video_io import frame_iter, video_info
 from src.scoring.grade import format_band
 from src.tests.base import (
@@ -46,6 +47,7 @@ from src.tests.base import (
     AnalysisResult,
     AthleteProfile,
     BaseTest,
+    DetectionError,
     MetricValue,
     ProtocolError,
     score_test,
@@ -71,6 +73,9 @@ _TOUCH_DEBOUNCE_S = 0.15        # 0.15 s min gap -> 6.7 Hz cap
 _POSE_CONF_MIN = 0.30
 _ENDCARD_HOLD_S = 2.5
 
+# Background tracks too short to be the test player.
+_MIN_TRACK_HISTORY_FRAMES = 60
+
 
 # --- State -------------------------------------------------------------
 
@@ -85,7 +90,6 @@ class _Tap:
 class _RunState:
     taps: list[_Tap] = field(default_factory=list)
     last_tap_frame: int = -10**6
-    track_area: dict[int, float] = field(default_factory=dict)
     # Zone state per IMAGE-SIDE (not pose-model L/R label) — robust to
     # pose-label flips. Image-left ankle vs image-right ankle, mapped
     # to athlete-anatomical L/R when registering the tap.
@@ -121,6 +125,46 @@ class FootTappingTest(BaseTest):
         fps = info.fps
         out_path = output_dir / f"{self.test_id}.mp4"
 
+        # === PASS 1: detect + track all persons + balls ===
+        track_history: dict[int, list[tuple[int, float, float, float, float]]] = {}
+        people_per_frame: dict[int, list[TrackedDetection]] = {}
+        balls_per_frame: dict[int, list[TrackedDetection]] = {}
+        n_frames = 0
+
+        for frame in frame_iter(video_path):
+            n_frames += 1
+            tracked = self._tracker.update(frame.image)
+            for p in tracked:
+                if p.class_id == PERSON_CLASS_ID:
+                    track_history.setdefault(p.track_id, []).append(
+                        (frame.idx, float(p.center[0]), float(p.center[1]),
+                         p.height, p.width)
+                    )
+                    people_per_frame.setdefault(frame.idx, []).append(p)
+                elif p.class_id == SPORTS_BALL_CLASS_ID:
+                    balls_per_frame.setdefault(frame.idx, []).append(p)
+
+        # === Pick THE player track (area dominance, then ball proximity) ===
+        ball_positions = {
+            fi: [(b.center[0], b.center[1]) for b in balls]
+            for fi, balls in balls_per_frame.items()
+        }
+        player_track_id = pick_player(
+            track_history,
+            object_positions=ball_positions or None,
+            min_history_frames=_MIN_TRACK_HISTORY_FRAMES,
+            verbose=True,
+        )
+        if player_track_id is None:
+            if not track_history:
+                raise DetectionError("no people were detected in the video")
+            raise ProtocolError(
+                "could not identify a single player track — "
+                "neither pixel-area dominance nor ball-proximity fallback "
+                "yielded a winner"
+            )
+
+        # === PASS 2: re-iterate, tap detection on the picked player only ===
         writer = cv2.VideoWriter(
             str(out_path),
             cv2.VideoWriter_fourcc(*"mp4v"),
@@ -131,17 +175,15 @@ class FootTappingTest(BaseTest):
             raise ProtocolError(f"could not open VideoWriter at {out_path}")
 
         state = _RunState()
-        n_frames = 0
         debounce_frames = int(round(_TOUCH_DEBOUNCE_S * fps))
 
         try:
             for frame in frame_iter(video_path):
-                n_frames += 1
                 img = frame.image
-
-                tracked = self._tracker.update(img)
-                runner = self._pick_athlete(tracked, state)
-                ball = _pick_ball(tracked, runner)
+                runner = _find_track_in_frame(
+                    people_per_frame.get(frame.idx, []), player_track_id
+                )
+                ball = _pick_ball(balls_per_frame.get(frame.idx, []), runner)
                 if runner is not None:
                     state.n_frames_with_athlete += 1
                 if ball is not None:
@@ -168,7 +210,6 @@ class FootTappingTest(BaseTest):
                     new_x: float | None = None
                     if img_left_now and not state.image_left_in_zone and debounced:
                         new_side = "image_left"
-                        # find x of ankle on image-left side that triggered
                         new_x = _ankle_x_on_side(pose, bcx, image_left=True)
                     elif img_right_now and not state.image_right_in_zone and debounced:
                         new_side = "image_right"
@@ -183,7 +224,6 @@ class FootTappingTest(BaseTest):
                     state.image_left_in_zone = False
                     state.image_right_in_zone = False
 
-                # Annotation
                 if runner is not None:
                     draw_bbox(img, runner.bbox_xyxy)
                 if ball is not None:
@@ -236,26 +276,6 @@ class FootTappingTest(BaseTest):
             ),
         )
 
-    # --- internal helpers ---------------------------------------------
-
-    def _pick_athlete(
-        self, tracked: list[TrackedDetection], state: _RunState
-    ) -> TrackedDetection | None:
-        """Cumulative-area dominant track, with largest-in-frame fallback."""
-        people = [t for t in tracked if t.class_id == PERSON_CLASS_ID]
-        for t in people:
-            state.track_area[t.track_id] = (
-                state.track_area.get(t.track_id, 0.0) + t.height * t.width
-            )
-        if not people:
-            return None
-        if state.track_area:
-            dominant_id = max(state.track_area, key=state.track_area.get)
-            for t in people:
-                if t.track_id == dominant_id:
-                    return t
-        return max(people, key=lambda t: t.height * t.width)
-
     def _compute_metrics(
         self, state: _RunState, duration_s: float
     ) -> dict[str, MetricValue]:
@@ -274,12 +294,21 @@ class FootTappingTest(BaseTest):
 # --- module-level helpers ---------------------------------------------
 
 
+def _find_track_in_frame(
+    people: list[TrackedDetection], track_id: int
+) -> TrackedDetection | None:
+    """Locate the picked-track-id detection in this frame's people."""
+    for p in people:
+        if p.track_id == track_id:
+            return p
+    return None
+
+
 def _pick_ball(
-    tracked: list[TrackedDetection],
+    balls: list[TrackedDetection],
     athlete: TrackedDetection | None,
 ) -> TrackedDetection | None:
     """Closest ball to the athlete (filters out other balls in frame)."""
-    balls = [t for t in tracked if t.class_id == SPORTS_BALL_CLASS_ID]
     if not balls:
         return None
     if athlete is None:

@@ -33,7 +33,7 @@ than silently report a duration spanning multiple attempts.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
@@ -50,6 +50,10 @@ from src.core.detection.player_detector import PERSON_CLASS_ID
 from src.core.pose.estimator import create_pose_estimator
 from src.core.tracking.bytetrack_tracker import ByteTrackTracker
 from src.core.tracking.player_picker import pick_player
+from src.core.tracking.run_window import (
+    cluster_object_positions,
+    find_run_on_track,
+)
 from src.core.utils.video_io import frame_iter, video_info
 from src.scoring.grade import format_band
 from src.tests.base import (
@@ -65,20 +69,6 @@ from src.tests.base import (
 
 # --- Tunables ----------------------------------------------------------
 
-# Per-track motion analysis (post-loop longest-run finder).
-# 60-frame (2 s) smoothing absorbs brief cone-touch pauses without
-# breaking the run into shorter segments.
-_MOTION_SMOOTH_WINDOW_FRAMES = 60
-# Threshold: per-frame smoothed motion > this fraction of mean bbox-h
-# is "in motion". 3% of a 200-px bbox = 6 px/frame, ~brisk jog speed.
-_MOTION_THRESHOLD_FRAC = 0.03
-# Adjacent above-threshold segments separated by a sub-threshold gap
-# shorter than this are merged.
-_GAP_MERGE_FRAMES = 30
-# Per-frame center jump above this fraction of mean bbox-h is treated
-# as a tracker ID swap (teleport), not real motion. Caps a real human
-# at ~50% of their bbox-height per frame.
-_TELEPORT_FRAC = 0.5
 # T-Test elite male is 8.8 s; below 6 s is implausible.
 _MIN_RUN_FRAMES = 180
 
@@ -167,8 +157,10 @@ class TTestTest(BaseTest):
                     )
 
         # === Pick THE player track (area dominance, then cone proximity) ===
-        cone_positions = _consensus_cones(
-            cone_detections, _CONE_CLUSTER_RADIUS_PX, _CONE_MIN_DETECTIONS
+        cone_positions = cluster_object_positions(
+            cone_detections,
+            radius_px=_CONE_CLUSTER_RADIUS_PX,
+            min_count=_CONE_MIN_DETECTIONS,
         )
         # Cones are stationary — same set for every frame in the
         # proximity-fallback step.
@@ -193,7 +185,7 @@ class TTestTest(BaseTest):
             )
 
         # Find the run window on the chosen player's track only.
-        run_window = _find_run_on_track(
+        run_window = find_run_on_track(
             track_history[player_track_id],
             min_run_frames=_MIN_RUN_FRAMES,
         )
@@ -274,132 +266,6 @@ class TTestTest(BaseTest):
                 fps_input=fps, duration_s=n_frames / fps if fps > 0 else 0.0
             ),
         )
-
-
-# --- Track-history analysis -------------------------------------------
-
-
-def _find_run_on_track(
-    history: list[tuple[int, float, float, float, float]],
-    *,
-    min_run_frames: int,
-) -> tuple[int, int] | None:
-    """Locate the longest sustained motion segment on a single track.
-
-    Returns (start_frame, stop_frame) or None if shorter than
-    `min_run_frames` or no qualifying segment.
-    """
-    run = _longest_motion_run(history)
-    if run is None:
-        return None
-    start, stop = run
-    if (stop - start) < min_run_frames:
-        return None
-    return run
-
-
-def _consensus_cones(
-    detections: list[tuple[float, float]],
-    radius_px: float,
-    min_count: int,
-) -> list[tuple[float, float]]:
-    """Greedy spatial cluster of cone detections into stable centroids."""
-    clusters: list[list[float]] = []  # [sum_x, sum_y, count]
-    r2 = radius_px * radius_px
-    for x, y in detections:
-        attached = False
-        for c in clusters:
-            mx = c[0] / c[2]
-            my = c[1] / c[2]
-            if (mx - x) ** 2 + (my - y) ** 2 < r2:
-                c[0] += x
-                c[1] += y
-                c[2] += 1
-                attached = True
-                break
-        if not attached:
-            clusters.append([x, y, 1])
-    return [
-        (c[0] / c[2], c[1] / c[2]) for c in clusters if c[2] >= min_count
-    ]
-
-
-def _longest_motion_run(
-    history: list[tuple[int, float, float, float, float]],
-) -> tuple[int, int] | None:
-    if len(history) < _MOTION_SMOOTH_WINDOW_FRAMES + 2:
-        return None
-    frame_idxs = [h[0] for h in history]
-    centers = np.array([(h[1], h[2]) for h in history], dtype=float)
-    heights = np.array([h[3] for h in history], dtype=float)
-
-    diffs = np.diff(centers, axis=0)
-    motion = np.linalg.norm(diffs, axis=1)
-
-    # Tracker ID swaps cause sudden teleport jumps in the chosen track's
-    # bbox center. Treat per-frame motion above _TELEPORT_FRAC * mean
-    # bbox-h as a teleport: zero out for smoothing AND mark as a hard
-    # run-break (the gap-merge step must not bridge across it).
-    mean_h = float(np.mean(heights))
-    teleport_thresh = _TELEPORT_FRAC * mean_h
-    teleports = motion > teleport_thresh
-    motion = motion.copy()
-    motion[teleports] = 0.0
-
-    window = _MOTION_SMOOTH_WINDOW_FRAMES
-    kernel = np.ones(window, dtype=float) / window
-    smoothed = np.convolve(motion, kernel, mode="same")
-
-    threshold = _MOTION_THRESHOLD_FRAC * mean_h
-    above = smoothed > threshold
-
-    # Merge above-threshold segments separated by short gaps. Teleport
-    # frames are forced as breaks: gap-merge will not bridge across.
-    merged = above.copy()
-    i = 0
-    while i < len(merged):
-        if not merged[i]:
-            j = i
-            while j < len(merged) and not merged[j]:
-                j += 1
-            gap_len = j - i
-            has_teleport = bool(teleports[i:j].any())
-            if (i > 0 and j < len(merged)
-                    and gap_len < _GAP_MERGE_FRAMES
-                    and not has_teleport):
-                merged[i:j] = True
-            i = j
-        else:
-            i += 1
-    # After gap-merge, force every teleport position to be a break so a
-    # contaminated segment never reads as one continuous run.
-    merged[teleports] = False
-
-    best_start_i = -1
-    best_len = 0
-    cur_start = -1
-    for i, a in enumerate(merged):
-        if a:
-            if cur_start < 0:
-                cur_start = i
-        else:
-            if cur_start >= 0:
-                cur_len = i - cur_start
-                if cur_len > best_len:
-                    best_start_i = cur_start
-                    best_len = cur_len
-                cur_start = -1
-    if cur_start >= 0:
-        cur_len = len(merged) - cur_start
-        if cur_len > best_len:
-            best_start_i = cur_start
-            best_len = cur_len
-
-    if best_start_i < 0 or best_len < 1:
-        return None
-    start_frame = frame_idxs[best_start_i]
-    stop_frame = frame_idxs[min(best_start_i + best_len, len(frame_idxs) - 1)]
-    return (start_frame, stop_frame)
 
 
 # --- HUD --------------------------------------------------------------

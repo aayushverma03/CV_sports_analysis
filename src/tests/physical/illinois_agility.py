@@ -9,15 +9,16 @@ v1 ships only the scored metric `total_completion_time_s`. Cone
 detection, route-violation tracking, and the prone-start event are
 spec-mandated for later iteration.
 
-Same multi-track + post-hoc-picker design as T-Test (deliberate
+Same multi-track + shared player_picker design as T-Test (deliberate
 exception to hard rule #3 — multi-person agility legitimately needs
 two video passes):
 
-- Pass 1: detect + track every person, record bbox history per track.
-- Post-loop: pick the runner via highest peak smoothed motion across
-  all tracks (the test-doer sprints; coaches/bystanders don't).
-  On that track, find the longest contiguous high-motion run
-  (gap-merge bridges brief cone-touch decelerations).
+- Pass 1: detect + track every person, sample cone detections at
+  stride. Record per-track bbox history.
+- Post-loop: pick the player track via shared player_picker (area
+  dominance → cone proximity + longest sustained motion fallback),
+  then find the run window on that track only via the teleport-aware
+  run-window finder.
 - Pass 2: re-iterate the video and render bbox + skeleton + run-
   relative HUD ONLY for the chosen player track.
 """
@@ -35,9 +36,15 @@ from src.core.annotation.overlays import (
     draw_skeleton,
     render_endcard,
 )
+from src.core.detection.marker_detector import MarkerDetector
 from src.core.detection.player_detector import PERSON_CLASS_ID
 from src.core.pose.estimator import create_pose_estimator
 from src.core.tracking.bytetrack_tracker import ByteTrackTracker
+from src.core.tracking.player_picker import pick_player
+from src.core.tracking.run_window import (
+    cluster_object_positions,
+    find_run_on_track,
+)
 from src.core.utils.video_io import frame_iter, video_info
 from src.scoring.grade import format_band
 from src.tests.base import (
@@ -53,14 +60,6 @@ from src.tests.base import (
 
 # --- Tunables ----------------------------------------------------------
 
-# 60-frame (2 s) smoothing absorbs cone-weave decelerations.
-_MOTION_SMOOTH_WINDOW_FRAMES = 60
-# 3% of bbox-h is "in motion" — the brisk-jog cutoff that excludes
-# casual walking by bystanders.
-_MOTION_THRESHOLD_FRAC = 0.03
-# Bridge sub-threshold gaps shorter than 1 s — cone-touch
-# decelerations don't end the run.
-_GAP_MERGE_FRAMES = 30
 # Illinois elite male is ~15 s; below 12 s is implausible for any
 # athlete. Filters out demo blips.
 _MIN_RUN_FRAMES = 360         # 12 s @ 30 fps
@@ -68,6 +67,13 @@ _MIN_RUN_FRAMES = 360         # 12 s @ 30 fps
 _MIN_TRACK_HISTORY_FRAMES = 60
 _POSE_INTERVAL_FRAMES = 3
 _ENDCARD_HOLD_S = 2.5
+
+# Cone detection: sample frames at this stride during pass 1 (cones
+# are stationary, so we only need a handful of detections to lock
+# their positions for the proximity fallback).
+_CONE_SAMPLE_STRIDE = 60
+_CONE_CLUSTER_RADIUS_PX = 40.0
+_CONE_MIN_DETECTIONS = 3
 
 
 # --- State -------------------------------------------------------------
@@ -98,6 +104,8 @@ class IllinoisAgilityTest(BaseTest):
             confidence=0.20,
         )
         self._pose = create_pose_estimator("pose_default")
+        # Lazy-init: only created when needed (cone-fallback in step 2)
+        self._marker: MarkerDetector | None = None
 
     def run(
         self,
@@ -109,9 +117,12 @@ class IllinoisAgilityTest(BaseTest):
         fps = info.fps
         out_path = output_dir / f"{self.test_id}.mp4"
 
-        # === PASS 1: detect + track all persons; no pose, no annotation ===
-        track_history: dict[int, list[tuple[int, float, float, float]]] = {}
+        # === PASS 1: detect + track all persons; sample cone detections ===
+        # Track history shape (frame_idx, cx, cy, bbox_h, bbox_w) — width
+        # is needed by player_picker.pick_by_area_dominance.
+        track_history: dict[int, list[tuple[int, float, float, float, float]]] = {}
         track_bboxes: dict[int, dict[int, np.ndarray]] = {}
+        cone_detections: list[tuple[float, float]] = []
         n_frames = 0
 
         for frame in frame_iter(video_path):
@@ -121,25 +132,71 @@ class IllinoisAgilityTest(BaseTest):
                 if p.class_id != PERSON_CLASS_ID:
                     continue
                 track_history.setdefault(p.track_id, []).append(
-                    (frame.idx, float(p.center[0]),
-                     float(p.center[1]), p.height)
+                    (frame.idx, float(p.center[0]), float(p.center[1]),
+                     p.height, p.width)
                 )
                 track_bboxes.setdefault(p.track_id, {})[frame.idx] = (
                     p.bbox_xyxy.copy()
                 )
+            if frame.idx % _CONE_SAMPLE_STRIDE == 0:
+                if self._marker is None:
+                    self._marker = MarkerDetector()
+                for det in self._marker.detect(frame.image):
+                    cone_detections.append(
+                        (float(det.center[0]), float(det.center[1]))
+                    )
 
-        # === Pick the test runner ===
-        best = _find_test_run(
-            track_history, fps, min_run_frames=_MIN_RUN_FRAMES
+        # === Pick THE player track (area dominance, then cone proximity) ===
+        cone_positions = cluster_object_positions(
+            cone_detections,
+            radius_px=_CONE_CLUSTER_RADIUS_PX,
+            min_count=_CONE_MIN_DETECTIONS,
         )
-        if best is None:
+        object_positions = (
+            {fi: cone_positions for fi in range(n_frames)}
+            if cone_positions else None
+        )
+        print(f"[illinois_agility] {len(cone_positions)} cone clusters detected")
+        player_track_id = pick_player(
+            track_history,
+            object_positions=object_positions,
+            min_history_frames=_MIN_TRACK_HISTORY_FRAMES,
+            verbose=True,
+        )
+        if player_track_id is None:
             if not track_history:
                 raise DetectionError("no people were detected in the video")
             raise ProtocolError(
-                f"no sustained motion segment found "
-                f"(>= {_MIN_RUN_FRAMES / fps:.0f} s) on any track — "
-                "could not identify the test run"
+                "could not identify a single player track — "
+                "neither pixel-area dominance nor cone-proximity fallback "
+                "yielded a winner"
             )
+
+        # Single-athlete agility videos benefit from the OLD behavior:
+        # gap-merge bridges brief tracker hiccups (occasional bbox jumps
+        # from detector jitter or 1-frame ID flickers) so the athlete's
+        # ~14s run reads as one sustained segment. Setting teleport_frac
+        # above the physical max (motion ratios observed up to ~3.7x
+        # bbox-h on this dataset; pure artifacts) disables the run-break
+        # logic that's needed by T-Test's contaminated multi-attempt
+        # tracks but harmful here. The picker's 86% area dominance is a
+        # strong signal that this track is the real athlete.
+        run_window = find_run_on_track(
+            track_history[player_track_id],
+            min_run_frames=_MIN_RUN_FRAMES,
+            teleport_frac=5.0,
+        )
+        if run_window is None:
+            raise ProtocolError(
+                f"player track {player_track_id} found but no sustained "
+                f"motion segment >= {_MIN_RUN_FRAMES / fps:.0f} s — "
+                "could not time the run"
+            )
+        best = _TestRun(
+            track_id=player_track_id,
+            start_frame=run_window[0],
+            stop_frame=run_window[1],
+        )
 
         # === PASS 2: re-iterate, annotate only the chosen player ===
         writer = cv2.VideoWriter(
@@ -205,107 +262,6 @@ class IllinoisAgilityTest(BaseTest):
                 fps_input=fps, duration_s=n_frames / fps if fps > 0 else 0.0
             ),
         )
-
-
-# --- Track-history analysis -------------------------------------------
-
-
-def _find_test_run(
-    track_history: dict[int, list[tuple[int, float, float, float]]],
-    fps: float,
-    min_run_frames: int,
-) -> _TestRun | None:
-    """Pick the runner first (highest peak motion), then their longest run."""
-    eligible = [
-        (track_id, history)
-        for track_id, history in track_history.items()
-        if len(history) >= _MIN_TRACK_HISTORY_FRAMES
-    ]
-    if not eligible:
-        return None
-    runner_id, runner_history = max(
-        eligible, key=lambda kv: _peak_smoothed_motion(kv[1])
-    )
-    run = _longest_motion_run(runner_history)
-    if run is None:
-        return None
-    start, stop = run
-    if (stop - start) < min_run_frames:
-        return None
-    return _TestRun(track_id=runner_id, start_frame=start, stop_frame=stop)
-
-
-def _peak_smoothed_motion(
-    history: list[tuple[int, float, float, float]],
-) -> float:
-    if len(history) < _MOTION_SMOOTH_WINDOW_FRAMES + 2:
-        return 0.0
-    centers = np.array([(h[1], h[2]) for h in history], dtype=float)
-    diffs = np.diff(centers, axis=0)
-    motion = np.linalg.norm(diffs, axis=1)
-    kernel = np.ones(_MOTION_SMOOTH_WINDOW_FRAMES) / _MOTION_SMOOTH_WINDOW_FRAMES
-    smoothed = np.convolve(motion, kernel, mode="same")
-    return float(np.max(smoothed))
-
-
-def _longest_motion_run(
-    history: list[tuple[int, float, float, float]],
-) -> tuple[int, int] | None:
-    if len(history) < _MOTION_SMOOTH_WINDOW_FRAMES + 2:
-        return None
-    frame_idxs = [h[0] for h in history]
-    centers = np.array([(h[1], h[2]) for h in history], dtype=float)
-    heights = np.array([h[3] for h in history], dtype=float)
-
-    diffs = np.diff(centers, axis=0)
-    motion = np.linalg.norm(diffs, axis=1)
-
-    window = _MOTION_SMOOTH_WINDOW_FRAMES
-    kernel = np.ones(window, dtype=float) / window
-    smoothed = np.convolve(motion, kernel, mode="same")
-
-    threshold = _MOTION_THRESHOLD_FRAC * float(np.mean(heights))
-    above = smoothed > threshold
-
-    merged = above.copy()
-    i = 0
-    while i < len(merged):
-        if not merged[i]:
-            j = i
-            while j < len(merged) and not merged[j]:
-                j += 1
-            gap_len = j - i
-            if i > 0 and j < len(merged) and gap_len < _GAP_MERGE_FRAMES:
-                merged[i:j] = True
-            i = j
-        else:
-            i += 1
-
-    best_start_i = -1
-    best_len = 0
-    cur_start = -1
-    for i, a in enumerate(merged):
-        if a:
-            if cur_start < 0:
-                cur_start = i
-        else:
-            if cur_start >= 0:
-                cur_len = i - cur_start
-                if cur_len > best_len:
-                    best_start_i = cur_start
-                    best_len = cur_len
-                cur_start = -1
-    if cur_start >= 0:
-        cur_len = len(merged) - cur_start
-        if cur_len > best_len:
-            best_start_i = cur_start
-            best_len = cur_len
-
-    if best_start_i < 0 or best_len < 1:
-        return None
-    start_frame = frame_idxs[best_start_i]
-    stop_frame = frame_idxs[min(best_start_i + best_len, len(frame_idxs) - 1)]
-    return (start_frame, stop_frame)
 
 
 # --- HUD --------------------------------------------------------------
