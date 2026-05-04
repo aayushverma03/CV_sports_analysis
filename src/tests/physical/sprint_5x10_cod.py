@@ -4,11 +4,17 @@ Course: two cones 10 m apart. Athlete sprints A->B (1), turns,
 B->A (2), turns, A->B (3), turns, B->A (4), turns, A->B (5). Total
 50 m of running with four 180-degree turns.
 
-Same 2-pass + shared player_picker design as the agility tests, but
-uses the cone PAIR for both player-picker proximity AND pixel-to-metre
-calibration (cone separation = 10 m). Per-rep timing is detected from
-the picked athlete's x-trajectory: each time the athlete crosses past
-a cone in the run direction, that's a turn / shuttle boundary.
+Three-pass design with shared player_picker:
+
+- Pass 1: detect + track every person, sample cone detections, run
+  Lucas-Kanade + ORB camera-motion estimation. Stabilize all positions
+  into frame-0 coordinates.
+- Pick player + cluster cones into start/finish ends + calibrate.
+- Pass 2: pose on the picked player's bbox; collect ankle positions
+  in stabilized space. Rep boundaries come from the ankle x-trajectory
+  (the athlete's feet land precisely at the cones during turns, while
+  the bbox center lags / swings during fast direction changes).
+- Pass 3: render annotated video using cached pose results.
 
 Metrics scored: total_completion_time_s, sprint_best_s,
 fatigue_drop_off_pct. Informational: rep_times_s, total_distance_m,
@@ -74,6 +80,7 @@ _TOTAL_DISTANCE_M = _CONE_SEPARATION_M * _N_SHUTTLES
 _MIN_TRACK_HISTORY_FRAMES = 240    # 8 s @ 30 fps
 
 _POSE_INTERVAL_FRAMES = 3
+_POSE_CONF_MIN = 0.30
 _ENDCARD_HOLD_S = 2.5
 
 # Motion-onset detection: the first frame where the athlete's x has
@@ -288,24 +295,48 @@ class Sprint5x10CodTest(BaseTest):
             ],
         }))
 
-        # The bbox-h-relative motion threshold used by find_run_on_track
-        # doesn't apply here: in typical sport-hall framing the lane width
-        # (10 m -> ~135 px in this video) is smaller than the athlete's
-        # bbox-h, so per-frame motion never exceeds the 3% threshold.
-        # Instead, use the whole picked track and rely on motion-onset +
-        # turn detection to bound the run window honestly.
-        history = track_history[player_track_id]
-        track_start_fi = history[0][0]
-        track_stop_fi = history[-1][0]
+        # === PASS 2: pose on picked player; collect ankle positions ===
+        # Ankle x-trajectory is more accurate than bbox center for rep
+        # turn detection — feet land at the cones, while the bbox
+        # center lags or swings. Run pose only on the picked player's
+        # bbox at _POSE_INTERVAL_FRAMES stride; transform ankle pixel
+        # coords into stabilized (frame-0) space using the same camera
+        # motion that stabilized the track history.
+        player_bboxes_by_frame = track_bboxes.get(player_track_id, {})
+        pose_results: dict[int, object] = {}
+        ankle_trajectory: list[tuple[int, float, float]] = []   # (fi, ax_stab, ay_stab)
+        for frame in frame_iter(video_path):
+            if frame.idx % _POSE_INTERVAL_FRAMES != 0:
+                continue
+            bbox = player_bboxes_by_frame.get(frame.idx)
+            if bbox is None:
+                continue
+            pose = self._pose.estimate_bbox(frame.image, bbox)
+            pose_results[frame.idx] = pose
+            ankle_xy = _ankle_midpoint_pixel(pose)
+            if ankle_xy is None:
+                continue
+            sx, sy = motion.transform_point(frame.idx, ankle_xy)
+            ankle_trajectory.append((frame.idx, sx, sy))
 
-        # Detect rep boundaries; first boundary becomes the test start.
+        if len(ankle_trajectory) < 10:
+            raise ProtocolError(
+                "insufficient pose / ankle data on the picked player "
+                f"({len(ankle_trajectory)} samples) — could not run "
+                "rep detection"
+            )
+
+        ankle_history = [
+            (fi, ax, ay, 0.0, 0.0)
+            for (fi, ax, ay) in ankle_trajectory
+        ]
         rep_boundaries = _detect_turns(
-            history=history,
+            history=ankle_history,
             start_frame=_motion_onset_frame(
-                history=history,
+                history=ankle_history,
                 onset_px=_MOTION_ONSET_FRAC * cone_dist_px,
             ),
-            stop_frame=track_stop_fi,
+            stop_frame=ankle_history[-1][0],
             cone_a=cone_a,
             cone_b=cone_b,
             cone_dist_px=cone_dist_px,
@@ -314,8 +345,8 @@ class Sprint5x10CodTest(BaseTest):
         if len(rep_boundaries) < 6:
             raise ProtocolError(
                 f"detected only {len(rep_boundaries)-1} reps; expected 5. "
-                "Camera-perpendicular view is required so the athlete's "
-                "x-axis projects cleanly onto the cone line."
+                "Check that the athlete completes 5 sprints between cones "
+                "and that pose tracking is stable on the feet."
             )
         best = _TestRun(
             track_id=player_track_id,
@@ -324,7 +355,6 @@ class Sprint5x10CodTest(BaseTest):
             rep_boundary_frames=tuple(rep_boundaries),
         )
 
-        # === Compute metrics on the picked track within the run window ===
         metrics = _compute_metrics(
             history=track_history[player_track_id],
             best=best,
@@ -333,7 +363,7 @@ class Sprint5x10CodTest(BaseTest):
         )
         scores, test_score = score_test(metrics, self.test_id, athlete.gender)
 
-        # === PASS 2: re-iterate, annotate only the chosen player ===
+        # === PASS 3: render annotated video ===
         writer = cv2.VideoWriter(
             str(out_path),
             cv2.VideoWriter_fourcc(*"mp4v"),
@@ -343,7 +373,6 @@ class Sprint5x10CodTest(BaseTest):
         if not writer.isOpened():
             raise ProtocolError(f"could not open VideoWriter at {out_path}")
 
-        player_bboxes_by_frame = track_bboxes.get(best.track_id, {})
         history_by_frame: dict[int, tuple[float, float]] = {
             fi: (cx, cy)
             for (fi, cx, cy, _, _) in track_history[player_track_id]
@@ -355,8 +384,9 @@ class Sprint5x10CodTest(BaseTest):
                 img = frame.image
                 player_bbox = player_bboxes_by_frame.get(frame.idx)
                 if player_bbox is not None:
-                    if frame.idx % _POSE_INTERVAL_FRAMES == 0:
-                        last_pose = self._pose.estimate_bbox(img, player_bbox)
+                    pose = pose_results.get(frame.idx)
+                    if pose is not None:
+                        last_pose = pose
                     draw_bbox(img, player_bbox)
                     if last_pose is not None:
                         draw_skeleton(img, last_pose.keypoints)
@@ -397,6 +427,36 @@ class Sprint5x10CodTest(BaseTest):
         )
 
 
+# --- Pose helper -------------------------------------------------------
+
+
+def _ankle_midpoint_pixel(pose) -> tuple[float, float] | None:
+    """Mean of left+right ankle keypoints (pixel coords). Returns None
+    if neither ankle has confidence above the threshold.
+
+    Per the test docstring, ankle position is a better proxy than bbox
+    center for cone-touch detection: feet land at the cones, while the
+    torso bbox lags or swings during turns.
+    """
+    if pose is None:
+        return None
+    pts: list[tuple[float, float]] = []
+    for kp_name in ("left_ankle", "right_ankle"):
+        try:
+            conf = pose.confidence_of(kp_name)
+        except Exception:
+            return None
+        if conf < _POSE_CONF_MIN:
+            continue
+        pos = pose.position(kp_name)
+        pts.append((float(pos[0]), float(pos[1])))
+    if not pts:
+        return None
+    cx = sum(p[0] for p in pts) / len(pts)
+    cy = sum(p[1] for p in pts) / len(pts)
+    return cx, cy
+
+
 # --- Cone helpers -----------------------------------------------------
 
 
@@ -420,25 +480,55 @@ def _is_horizontal_pair(
 def _pick_cone_pair(
     clusters: list[tuple[float, float]],
 ) -> tuple[tuple[float, float] | None, tuple[float, float] | None]:
-    """Return the two clusters farthest apart in image x.
+    """Return the two LANE-END midpoints, left-to-right.
 
-    With exactly 2 clusters, returns them in left-to-right order. With
-    > 2, picks the pair with maximum x-separation (most likely the
-    end-cones of the lane). With < 2, returns (None, None).
+    Real-world setup is two cones at the start line + two at the finish
+    line. After spatial clustering each cone gets its own cluster, so
+    the typical input is 4 clusters in 2 spatially-separated groups.
+    A 1-D gap split on the x-axis identifies the start group and the
+    finish group; centroids of each give the actual lane endpoints
+    (where the athlete touches the line, NOT the outer cones).
+
+    Falls back to max-x-separation if there's no clear gap (e.g. only
+    2 clusters, or very evenly-spaced cones).
     """
     if len(clusters) < 2:
         return None, None
     if len(clusters) == 2:
         a, b = clusters
         return (a, b) if a[0] <= b[0] else (b, a)
-    best = (0.0, None, None)
-    for i in range(len(clusters)):
-        for j in range(i + 1, len(clusters)):
-            dx = abs(clusters[i][0] - clusters[j][0])
-            if dx > best[0]:
-                best = (dx, clusters[i], clusters[j])
-    a, b = best[1], best[2]
-    return (a, b) if a[0] <= b[0] else (b, a)
+
+    # Sort by x and find the largest gap.
+    s = sorted(clusters, key=lambda c: c[0])
+    xs = [c[0] for c in s]
+    gaps = [(xs[i + 1] - xs[i], i) for i in range(len(xs) - 1)]
+    biggest_gap, split_idx = max(gaps, key=lambda g: g[0])
+    other_gaps = [g for g, i in gaps if i != split_idx]
+
+    # Require the lane gap to be at least 2x the average inter-cone
+    # spacing within an end. If there's no clean split, the geometry
+    # isn't 4-cone-style — fall back to max-separation.
+    if other_gaps and biggest_gap < 2.0 * (sum(other_gaps) / len(other_gaps)):
+        best = (0.0, None, None)
+        for i in range(len(s)):
+            for j in range(i + 1, len(s)):
+                dx = abs(s[i][0] - s[j][0])
+                if dx > best[0]:
+                    best = (dx, s[i], s[j])
+        a, b = best[1], best[2]
+        return (a, b) if a[0] <= b[0] else (b, a)
+
+    left_group = s[: split_idx + 1]
+    right_group = s[split_idx + 1:]
+    left_centroid = (
+        sum(c[0] for c in left_group) / len(left_group),
+        sum(c[1] for c in left_group) / len(left_group),
+    )
+    right_centroid = (
+        sum(c[0] for c in right_group) / len(right_group),
+        sum(c[1] for c in right_group) / len(right_group),
+    )
+    return left_centroid, right_centroid
 
 
 # --- Start / turn detection -------------------------------------------

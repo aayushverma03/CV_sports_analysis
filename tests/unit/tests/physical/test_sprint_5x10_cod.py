@@ -25,12 +25,34 @@ def test_pick_cone_pair_two_clusters_returns_left_to_right():
     assert left == b and right == a
 
 
-def test_pick_cone_pair_picks_widest_separation_among_three():
-    """A bystander cone in the middle shouldn't be chosen."""
-    cones = [(100.0, 400.0), (320.0, 410.0), (560.0, 405.0)]
+def test_pick_cone_pair_four_cones_returns_end_centroids():
+    """4 cones in 2 pairs (start + finish, each ~80px wide, 10m gap):
+    return the START centroid and FINISH centroid, not the outermost
+    cones."""
+    cones = [
+        (100.0, 400.0), (180.0, 405.0),    # start pair
+        (950.0, 410.0), (1030.0, 408.0),   # finish pair
+    ]
+    left, right = _pick_cone_pair(cones)
+    assert abs(left[0] - 140.0) < 1.0    # start midpoint
+    assert abs(right[0] - 990.0) < 1.0   # finish midpoint
+
+
+def test_pick_cone_pair_three_cones_one_pair_one_loner():
+    """2 cones at start + 1 at finish: centroid the pair, single is its
+    own end."""
+    cones = [(100.0, 400.0), (180.0, 400.0), (1000.0, 400.0)]
+    left, right = _pick_cone_pair(cones)
+    assert abs(left[0] - 140.0) < 1.0
+    assert abs(right[0] - 1000.0) < 1.0
+
+
+def test_pick_cone_pair_evenly_spaced_falls_back_to_max_separation():
+    """No clear gap (cones evenly spaced): use max-x-separation."""
+    cones = [(100.0, 400.0), (300.0, 400.0), (500.0, 400.0), (700.0, 400.0)]
     left, right = _pick_cone_pair(cones)
     assert left == (100.0, 400.0)
-    assert right == (560.0, 405.0)
+    assert right == (700.0, 400.0)
 
 
 def test_pick_cone_pair_too_few():
