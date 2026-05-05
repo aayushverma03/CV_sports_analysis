@@ -106,6 +106,29 @@ Recommended order — each row gets its own session:
   or scores each separately. Unblocks the T-Test demo video that
   currently has to fail-loud due to ID-swap contamination.
 
+### Phase 4.13 follow-ups (Zig-Zag Dribbling)
+
+- [ ] **Cone detection finds 0 clusters on the follow-camera demo
+  video.** Yellow poles are visible in many frames but YOLO-World
+  prompts at conf=0.05 + sample stride 30 produce too few detections
+  to cluster (`_CONE_MIN_DETECTIONS = 3`). With a 13.9 s video, that's
+  only ~14 sample frames; a couple of single detections per pole
+  isn't enough to form a cluster. Pipeline correctly falls back to
+  body-height-proxy calibration. Fix options: tighten the sample
+  stride to 15, lower `_CONE_MIN_DETECTIONS` to 2, or add aspect-
+  ratio post-filter to MarkerDetector to upweight tall thin yellow
+  pole bboxes. Same root issue surfaced in Phase 4.9 (5x10m).
+- [ ] **cone_miss_events + avg_cod_angle_deg.** Both deferred from
+  v1. cone_miss_events needs slalom-side analysis (which side of
+  the cone did the athlete pass on, vs the alternation pattern of
+  the protocol). avg_cod_angle_deg needs trajectory inflection
+  analysis at each cone passage.
+- [ ] **Re-validate completion time** once cone detection works.
+  Current 7.203 s is "elite" and extrapolated. Could be a real fast
+  time for U17 or could indicate motion-onset trimming too
+  aggressively. Easier to confirm with cone-passage timestamps for
+  ground truth.
+
 ### Phase 4.11 / 4.12 follow-ups (Jump tests — input videos)
 
 - [ ] **Squat Jump — re-validate on a clean test video.** The Phase 4.11
