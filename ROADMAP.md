@@ -106,9 +106,9 @@ Recommended order — each row gets its own session:
   or scores each separately. Unblocks the T-Test demo video that
   currently has to fail-loud due to ID-swap contamination.
 
-### Phase 4.11 follow-up (Squat Jump)
+### Phase 4.11 / 4.12 follow-ups (Jump tests — input videos)
 
-- [ ] **Re-validate Squat Jump on a clean test video.** The Phase 4.11
+- [ ] **Squat Jump — re-validate on a clean test video.** The Phase 4.11
   smoke ran on a Polytan/Humotion promo video that contains hard scene
   cuts during the jump itself. The pipeline calibrated its standing
   ankle baseline during the pre-cut shot, then mis-interpreted the
@@ -116,6 +116,12 @@ Recommended order — each row gets its own session:
   (jump_height_cm ≈ 1194 cm). Pipeline logic is correct; the video
   isn't a usable test recording. User will provide a single-shot
   side-on phone-recorded squat jump; re-run smoke then.
+- [ ] **Standing Long Jump — re-validate on a clean test video.** The
+  Phase 4.12 default video is a coach demonstrating the takeoff-line
+  setup with a panning camera, not an athlete actually performing the
+  jump. User will provide a single-shot side-on phone-recorded
+  standing long jump (athlete in frame the whole time, takeoff line
+  visible, athlete fully in shot at landing); re-run smoke then.
 - [ ] **Optional: scene-cut detection.** Add a frame-to-frame mean
   absolute difference check; if it spikes (hard cut), reset the
   ankle baseline and either resume detection in the new shot or abort
