@@ -48,7 +48,7 @@ from src.core.annotation.overlays import (
     render_endcard,
 )
 from src.core.calibration.camera_motion import CameraMotion
-from src.core.detection.marker_detector import MarkerDetector
+from src.core.detection.marker_detector import CustomMarkerDetector
 from src.core.detection.player_detector import PERSON_CLASS_ID
 from src.core.pose.estimator import create_pose_estimator
 from src.core.pose.orientation import ankle_side, body_center_x
@@ -85,15 +85,14 @@ _MIN_TRACK_HISTORY_FRAMES = 60
 _POSE_INTERVAL_FRAMES = 3
 _ENDCARD_HOLD_S = 2.5
 
-# Marker prompts — same setup as 5x10m: yellow poles + disks.
-_MARKER_PROMPTS = (
-    "yellow slalom pole",
-    "agility pole",
-    "yellow vertical pole",
-    "orange traffic cone",
-    "training cone",
+# Custom-trained marker detectors: zig-zag courses use both yellow
+# slalom poles and green/red low-dome markers. The two own-trained
+# YOLO models (yellow_pole_v1 + green_dome_v1) replaced YOLO-World
+# text prompts after Phase 4.13 follow-up.
+_MARKER_MODEL_KEYS = (
+    "detector_yellow_pole_v1",
+    "detector_green_dome_v1",
 )
-_MARKER_CONFIDENCE = 0.05
 _CONE_SAMPLE_STRIDE = 30
 _CONE_CLUSTER_RADIUS_PX = 60.0
 _CONE_MIN_DETECTIONS = 3
@@ -157,7 +156,7 @@ class ZigZagDribblingTest(BaseTest):
             confidence=0.10,
         )
         self._pose = create_pose_estimator("pose_default")
-        self._marker: MarkerDetector | None = None
+        self._marker: CustomMarkerDetector | None = None
 
     def run(
         self,
@@ -195,9 +194,8 @@ class ZigZagDribblingTest(BaseTest):
                     balls_per_frame.setdefault(frame.idx, []).append(p)
             if frame.idx % _CONE_SAMPLE_STRIDE == 0:
                 if self._marker is None:
-                    self._marker = MarkerDetector(
-                        prompts=list(_MARKER_PROMPTS),
-                        confidence=_MARKER_CONFIDENCE,
+                    self._marker = CustomMarkerDetector(
+                        model_keys=list(_MARKER_MODEL_KEYS),
                     )
                 for det in self._marker.detect(frame.image):
                     cone_detections_per_frame.append((

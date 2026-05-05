@@ -1,0 +1,20 @@
+# Training config for yellow_pole_v1 detector.
+#
+# Source dataset: own labelling, ayushverma/Yellow_pole (Roboflow).
+# 93 images total, auto-split 70/20/10 -> 65 train / 18 valid / 10 test.
+# Single class `yellow_pole` (vertical yellow slalom poles with disk bases,
+# captured across 5x10m, Zig-Zag, Figure-of-8, Hurdle-Agility, Repeated
+# Sprint videos).
+#
+# Run:  uv run scripts/train_yolo.py --config configs/training/yellow_pole_v1.yaml
+
+detector_name: yellow_pole_v1
+dataset_yaml: data/_labelling/community/yellow_pole_v1/data.yaml
+base_model: yolo26n.pt
+
+epochs: 100
+imgsz: 640
+batch: 16
+patience: 20
+device: auto
+seed: 0

@@ -1,0 +1,23 @@
+# Training config for green_dome_v1 detector.
+#
+# Source dataset: own labelling, ayushverma/Green_dome (Roboflow).
+# 53 images total, auto-split 70/20/10 -> 37 train / 10 valid / 6 test.
+# Single class `green_dome` (low hemispherical green/red dome markers
+# captured across Zig-Zag, Figure-of-8, Straight-Line dribbling videos).
+# Per the user's request, green AND red domes are merged under one label
+# in the dataset.
+#
+# Small training set; expect noisy mAP — extend the labelling pool for v2.
+#
+# Run:  uv run scripts/train_yolo.py --config configs/training/green_dome_v1.yaml
+
+detector_name: green_dome_v1
+dataset_yaml: data/_labelling/community/green_dome_v1/data.yaml
+base_model: yolo26n.pt
+
+epochs: 100
+imgsz: 640
+batch: 8           # smaller batch — only 37 train images
+patience: 20
+device: auto
+seed: 0

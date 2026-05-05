@@ -118,6 +118,52 @@ REGISTRY: dict[str, ModelSpec] = {
             "notes": "Traffic cones only. Tests using flat marker disks (Linear Sprint, Illinois) or slalom poles (Zig-Zag) will need v2 with extended dataset.",
         },
     ),
+    "detector_yellow_pole_v1": ModelSpec(
+        name="yellow_pole_v1",
+        weights="custom/yellow_pole_v1.pt",
+        backend="ultralytics",
+        version="1.0.0",
+        extras={
+            "task": "detect",
+            "classes": ["yellow_pole"],
+            "confidence_default": 0.30,
+            "iou_default": 0.45,
+            "trained_on": "data/_labelling/community/yellow_pole_v1/data.yaml",
+            "val_mAP50": 0.923,
+            "val_mAP50_95": 0.636,
+            "notes": (
+                "93 own-labelled frames (65/18/10 split) from 5x10m, "
+                "Zig-Zag, Figure-of-8, Hurdle-Agility, Repeated Sprint "
+                "videos. Replaces YOLO-World 'yellow slalom pole' prompt "
+                "in MarkerDetector for slalom-pole calibration."
+            ),
+        },
+    ),
+    "detector_green_dome_v1": ModelSpec(
+        name="green_dome_v1",
+        weights="custom/green_dome_v1.pt",
+        backend="ultralytics",
+        version="1.0.0",
+        extras={
+            "task": "detect",
+            # User asked for green AND red domes clubbed under one class;
+            # dataset reflects that.
+            "classes": ["green_dome"],
+            "confidence_default": 0.30,
+            "iou_default": 0.45,
+            "trained_on": "data/_labelling/community/green_dome_v1/data.yaml",
+            "val_mAP50": 0.896,
+            "val_mAP50_95": 0.687,
+            "notes": (
+                "53 own-labelled frames (37/10/6 split) from Zig-Zag, "
+                "Figure-of-8, Straight-Line dribbling videos. Both green "
+                "and red domes labelled under the same class. Replaces "
+                "YOLO-World — flat dome markers were undetected by text "
+                "prompts. Small training set; expect noisy mAP and extend "
+                "the labelling pool for v2."
+            ),
+        },
+    ),
     "detector_open_vocab_v1": ModelSpec(
         name="yolo-world-v2",
         weights="yolov8x-worldv2.pt",

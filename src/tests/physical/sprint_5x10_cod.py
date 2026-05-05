@@ -46,7 +46,7 @@ from src.core.annotation.overlays import (
 )
 from src.core.calibration.camera_calibration import CalibrationError
 from src.core.calibration.camera_motion import CameraMotion
-from src.core.detection.marker_detector import MarkerDetector
+from src.core.detection.marker_detector import CustomMarkerDetector
 from src.core.detection.player_detector import PERSON_CLASS_ID
 from src.core.pose.estimator import create_pose_estimator
 from src.core.tracking.bytetrack_tracker import ByteTrackTracker
@@ -89,18 +89,14 @@ _ENDCARD_HOLD_S = 2.5
 # standing period that would otherwise inflate rep 1's time).
 _MOTION_ONSET_FRAC = 0.10
 
-# Marker sampling — sport-hall yellow slalom poles need a richer prompt
-# vocabulary and lower confidence than the registry default. Stride is
-# also tighter than the agility tests because 5x10m videos are short
-# (15-25 s) and we need enough samples for the cluster threshold.
-_MARKER_PROMPTS = (
-    "yellow slalom pole",
-    "agility pole",
-    "yellow vertical pole",
-    "orange traffic cone",
-    "training cone",
+# Custom-trained marker detectors. 5x10m courses are typically yellow
+# slalom poles; green/red domes appear when poles are stuck into dome
+# bases. Both detectors run per sample frame; clustering merges the
+# results.
+_MARKER_MODEL_KEYS = (
+    "detector_yellow_pole_v1",
+    "detector_green_dome_v1",
 )
-_MARKER_CONFIDENCE = 0.05
 _CONE_SAMPLE_STRIDE = 30
 _CONE_CLUSTER_RADIUS_PX = 60.0
 _CONE_MIN_DETECTIONS = 3
@@ -143,7 +139,7 @@ class Sprint5x10CodTest(BaseTest):
             confidence=0.20,
         )
         self._pose = create_pose_estimator("pose_default")
-        self._marker: MarkerDetector | None = None
+        self._marker: CustomMarkerDetector | None = None
 
     def run(
         self,
@@ -185,9 +181,8 @@ class Sprint5x10CodTest(BaseTest):
                 )
             if frame.idx % _CONE_SAMPLE_STRIDE == 0:
                 if self._marker is None:
-                    self._marker = MarkerDetector(
-                        prompts=list(_MARKER_PROMPTS),
-                        confidence=_MARKER_CONFIDENCE,
+                    self._marker = CustomMarkerDetector(
+                        model_keys=list(_MARKER_MODEL_KEYS),
                     )
                 for det in self._marker.detect(frame.image):
                     cone_detections_per_frame.append((
