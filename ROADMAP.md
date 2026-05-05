@@ -108,6 +108,15 @@ Recommended order — each row gets its own session:
 
 ### Phase 4.14 follow-ups (Figure of 8 Dribbling)
 
+- [ ] **green_dome_v1 misses orange/red dome markers on indoor turf.**
+  Re-smoke on the Figure-of-8 video after the v1 detector landed
+  produced 0 cone clusters — the user's setup uses ORANGE-ish dome
+  markers that fall outside the green + saturated-red training
+  distribution. Fix: re-run `extract_roboflow_frames.py` with the
+  figure-of-8 video included, label the orange domes under the same
+  `green_dome` class, and train green_dome_v2 with the extended
+  dataset. Until then, body-height-proxy calibration covers this
+  video.
 - [ ] **Run window cuts short on slow dribbling motion.** The first
   smoke ended at 5.506 s while the athlete continued dribbling for
   ~30 s. `find_run_on_track`'s motion threshold (3% of bbox-h after
