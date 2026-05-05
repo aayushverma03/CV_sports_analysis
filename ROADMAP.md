@@ -108,16 +108,18 @@ Recommended order — each row gets its own session:
 
 ### Phase 4.13 follow-ups (Zig-Zag Dribbling)
 
-- [ ] **Cone detection finds 0 clusters on the follow-camera demo
-  video.** Yellow poles are visible in many frames but YOLO-World
-  prompts at conf=0.05 + sample stride 30 produce too few detections
-  to cluster (`_CONE_MIN_DETECTIONS = 3`). With a 13.9 s video, that's
-  only ~14 sample frames; a couple of single detections per pole
-  isn't enough to form a cluster. Pipeline correctly falls back to
-  body-height-proxy calibration. Fix options: tighten the sample
-  stride to 15, lower `_CONE_MIN_DETECTIONS` to 2, or add aspect-
-  ratio post-filter to MarkerDetector to upweight tall thin yellow
-  pole bboxes. Same root issue surfaced in Phase 4.9 (5x10m).
+- [ ] **Re-run smoke once the Roboflow-trained cone detector lands.**
+  User extracted 368 yellow_pole + 415 green_dome frames via
+  `scripts/extract_roboflow_frames.py` and is training custom YOLO
+  detectors in Roboflow. Once weights are available, swap them into
+  `MarkerDetector` (or create `CustomMarkerDetector`) and re-run
+  Phase 4.13 + 4.9 smokes — the cone-pair calibration path should
+  start kicking in instead of the body-height-proxy fallback, which
+  will tighten distance metrics and unlock cone-passage timestamps
+  for ground-truth completion-time validation.
+- [ ] **Cone detection finds 0 clusters with default YOLO-World
+  prompts on follow-camera videos.** Documented for context;
+  superseded by the Roboflow item above.
 - [ ] **cone_miss_events + avg_cod_angle_deg.** Both deferred from
   v1. cone_miss_events needs slalom-side analysis (which side of
   the cone did the athlete pass on, vs the alternation pattern of
