@@ -106,6 +106,30 @@ Recommended order — each row gets its own session:
   or scores each separately. Unblocks the T-Test demo video that
   currently has to fail-loud due to ID-swap contamination.
 
+### Phase 4.14 follow-ups (Figure of 8 Dribbling)
+
+- [ ] **Run window cuts short on slow dribbling motion.** The first
+  smoke ended at 5.506 s while the athlete continued dribbling for
+  ~30 s. `find_run_on_track`'s motion threshold (3% of bbox-h after
+  smoothing) is tuned for sprint-style locomotion; figure-8 dribbling
+  has the athlete largely in place, with circular motion that falls
+  below threshold once the bbox-h smoothing is applied. Fix options:
+  (a) lower motion threshold for dribbling tests, (b) add a
+  dribbling-specific "ball-near-foot, ball-moving" alternative
+  motion signal, (c) extend run window by gap-merge across longer
+  pauses (>1 s) when a ball is being controlled.
+- [ ] **Loop counter requires 2 detected cones.** Current smoke
+  detected only 1 cone cluster on the indoor-turf video → winding
+  computation skipped → loops_completed stuck at 0. Fix lands once
+  the Roboflow-trained green/red dome detector replaces YOLO-World
+  prompts; until then the loop counter is informational-only on this
+  video. As a fallback, infer cone positions from athlete-trajectory
+  extrema (the two outward turning points of the figure-8 are at
+  the cones).
+- [ ] **Re-run with Roboflow-trained markers** (same item as Phase
+  4.13's). Will both fix the cone-pair calibration AND restore the
+  loop counter.
+
 ### Phase 4.13 follow-ups (Zig-Zag Dribbling)
 
 - [ ] **Re-run smoke once the Roboflow-trained cone detector lands.**
