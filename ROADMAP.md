@@ -90,6 +90,35 @@ Recommended order — each row gets its own session:
 **Out of v1 scope** (deferred — awaiting data, ships in v1.1 or later):
 30-15 Intermittent · 45-Second Agility Hurdle Jump (no test-protocol video) · Cooper · DFB Agility · Hurdle Agility Run (replaced by 45-Second variant) · Incremental Ramp · Single-Leg Hop · Sit-and-Reach · Stepwise Core Stability · DFB Shooting · Reaction Time · Pattern Recognition · Video-Based Decision-Making
 
+### Performance — long-video pipeline scaling (cross-cutting)
+
+- [ ] **Long-form endurance tests don't scale on per-frame analysis.**
+  The Multistage Fitness smoke ran for 3h50min on a single 11-minute
+  input video before being killed without producing output (still in
+  pass 1). Per-frame `tracker.update()` + `CameraMotion.update()`
+  (ORB + Lucas-Kanade) on 20k frames is far too expensive in the
+  Mac/MPS dev environment. Same architectural issue affects Yo-Yo
+  IR2 (15-25 min videos), Bangsbo Sprint (multi-minute), and any
+  full Multistage / Yo-Yo session.
+
+  Fix options (likely all needed):
+  - **Decimate pass 1.** Skip every Nth frame for tracker + motion
+    estimation; interpolate between samples. Endurance shuttles take
+    seconds — frame-level granularity isn't required to count
+    reversals. Stride 3-5 should cut runtime 3-5x with no metric
+    loss.
+  - **Cheaper camera-motion** for largely-static cameras. Detect
+    "scene mostly static" via early frame differencing; if true,
+    skip ORB anchor + LK chain and use the identity transform.
+  - **Lighter feature detector** (FAST, 200 features) for the few
+    frames that DO need motion estimation.
+  - **Optional pose pass** — none of the endurance tests need pose;
+    skip the pose model entirely on those pipelines.
+
+  Until this lands, endurance pipelines are functionally correct but
+  unusable on real-length videos. Short clips (≤ 2 min) work for
+  pipeline validation but won't produce test-relevant scores.
+
 ## Phase 5 — Annotation polish
 
 - [ ] HUD ticker design pass (consistent typography, colour-blind safe palette)
