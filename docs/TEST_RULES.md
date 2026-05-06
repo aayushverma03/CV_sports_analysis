@@ -8,6 +8,33 @@ This file is a derived view; the per-test specs are authoritative.
 
 ---
 
+## Summary table
+
+| Test | Family | Rules |
+|---|---|---|
+| Linear Sprint (10 / 20 / 30 / 40 m) | foundational · sprint | 30 m lane with cones at 0/10/20/30 m. Stand stationary behind 0 m, self-cued start, sprint max effort through 30 m line. Best of 3 trials, ≥3 min rest. |
+| 5 × 10 m Sprint with COD | foundational · sprint | 2 cones 10 m apart. Stationary at A, sprint to B with foot beyond + 180° turn, sprint back to A with foot beyond + 180° turn, repeat for 5 × 10 m = 50 m. Time stops at chest crossing final line. |
+| Bangsbo Sprint (7 × 34.2 m) | foundational · sprint | 7 sprints of 34.2 m, 25 s rest between (operator/audio-cued), each sprint timed independently. |
+| Repeated Sprint Ability | foundational · sprint | N sprints (default 6 × 30 m), fixed rest between (default 20 s), max effort each rep. |
+| T-Test | foundational · agility | 4 cones in T (A start; B 9.14 m forward; C 4.57 m left of B; D 4.57 m right of B). Sprint A→B touch B with right hand; side-shuffle to C touch with left (no crossover); side-shuffle to D touch with right; side-shuffle back to B touch with left; backpedal B→A through finish. |
+| Illinois Agility | foundational · agility | 10 × 5 m rectangle, 4 corner cones + 4 internal cones 3.3 m apart. Prone behind start (face down, hands by shoulders); on signal sprint 10 m forward; turn, sprint 10 m back; weave through 4 internal cones (forward then back); sprint final 10 m to finish. |
+| Counter Movement Jump (CMJ) | foundational · jump | Side-on camera, hip-height. Stand upright with hands on hips (or arms free), drop into shallow squat, jump vertically as high as possible, land on same spot. |
+| Squat Jump | foundational · jump | Drop to ~90° knee flexion and **hold for 2–3 s** (no further countermovement), jump vertically, land on same spot. Pipeline flags hip-drop before takeoff as invalid (countermovement). |
+| Drop Jump | foundational · jump | Plyo box (30 / 40 / 60 cm). Stand on box edge, **step off** (don't jump down), on landing immediately rebound vertically, land on same spot. |
+| Standing Long Jump | foundational · jump | Marked landing zone, side-on camera. Stand behind take-off line, countermovement allowed (arm swing, knee bend), jump horizontally as far as possible, land on both feet. Distance measured to closest body part to line. |
+| Yo-Yo Intermittent IR2 | foundational · endurance | 20 m shuttle + 5 m recovery zone, audio-cued pace (start 13 km/h). 2 × 20 m at pace, 10 s active recovery jog through 5 m zone, pace increases each level. Ends when athlete fails to reach line on cue twice. |
+| Multistage Fitness (Beep Test) | foundational · endurance | 20 m shuttle, audio bleeps. Shuttle 20 m in time with bleeps; pace increases each level (~1 min per level). Ends after 2 consecutive failed-line-on-bleep events. |
+| Medicine Ball Throw | foundational · throw | 2–5 kg ball, marked zone, side-on camera. Seated or standing start (config), throw forward from chest as far as possible, distance from start line to first landing. Best of 3. |
+| Landing Error Scoring System (LESS, subset) | foundational · mobility | 30 cm box, target line at 50% body height ahead; side-on + frontal cameras preferred. Drop from 30 cm box, on landing immediately jump for max height. 3 trials, scored independently and averaged. |
+| Foot Tapping | foundational · reflex | Football on ground, side-on or top-down camera. Stand over ball, tap ball alternately with each foot as fast as possible, 30 s fixed duration. Total taps counted. |
+| Straight Line Dribbling | technical · dribbling | 5–8 markers ~1 m apart, total course length declared (default 30 m). Stand behind start with ball at feet, self-cued start, dribble at max speed, stop at end. Pipeline auto-classifies side-on vs rear-view. |
+| Juggling | technical · skill | Ball + open space, waist-up camera. Start juggling on signal; each clean touch counts (foot / thigh / head per protocol); ends when ball touches ground OR fixed duration elapses. |
+| Zig-Zag Dribbling | technical · dribbling | 5–7 cones at 2 m spacing in a slalom, ball. Start behind start gate, weave through every cone (alternating sides), return through finish gate. Penalty applied for missed cones. |
+| Figure of 8 Dribbling | technical · dribbling | 2 cones 3 m apart, ball. Start at midpoint between cones, dribble a full figure-of-8 around both cones (2 complete loops), return to start. |
+| Wall Pass | technical · skill | Wall + ball, marked line at fixed distance from wall. Pass to wall, receive rebound, control, pass again; cycle for fixed duration. Failed rebound recoveries (ball escapes) don't count toward `successful_passes`. |
+
+---
+
 ## Foundational (Physical)
 
 ### Sprint family
