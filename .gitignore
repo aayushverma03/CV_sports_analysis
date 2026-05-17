@@ -22,6 +22,9 @@ logs/
 *.pt
 *.onnx
 
+# Website demo video assets — source clips and renders are too large for git
+website_video_annotation/*.mp4
+
 # Secrets
 .env
 .env.local
