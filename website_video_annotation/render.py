@@ -25,11 +25,31 @@ ROOT = Path(__file__).resolve().parent
 VIDEOS: dict[str, str] = {
     "match": "6077718-uhd_3840_2160_25fps.mp4",
     "player_dribbling": "player_dribbling.mp4",
+    "jumps": "mixkit-jumps-of-a-football-player-in-a-training-42546-full-hd.mp4",
+    "oneone": "mixkit-player-dribbling-in-a-one-on-one-in-a-soccer-43484-full-hd.mp4",
+    "game": "mixkit-semi-pro-soccer-game-43485-full-hd.mp4",
+    "prowess": "mixkit-skilled-footballer-demonstrating-ball-juggling-prowess-43491-full-hd.mp4",
+    "female_juggle": "mixkit-skillful-female-soccer-player-doing-ball-juggling-42537-full-hd.mp4",
+    "juggle_skill": "mixkit-soccer-player-juggling-the-ball-with-great-skill-43490-full-hd.mp4",
 }
 
-# Render resolution. Match source (3840x2160 / 4K).
+# Beauty mode = skeleton + floating coaching cues, no readouts, no freezes.
+# Output resolution adapts to source (no upscaling of 1080p clips).
+BEAUTY_KEYS: set[str] = {
+    "jumps", "oneone", "game", "prowess", "female_juggle", "juggle_skill",
+}
+
+# Render resolution. Default 4K for the original showcase clips; beauty mode
+# overrides these at runtime to match source dimensions.
 OUT_W, OUT_H = 3840, 2160
 S = OUT_H / 1080  # uniform scale factor; all visual sizes derive from this
+
+
+def set_canvas(w: int, h: int) -> None:
+    """Override render canvas dimensions and recompute the scale factor."""
+    global OUT_W, OUT_H, S
+    OUT_W, OUT_H = w, h
+    S = OUT_H / 1080
 
 
 def px(v: float) -> int:
@@ -562,39 +582,48 @@ def draw_anchored_cue(
     body: str,
     alpha: float,
     anchor: tuple[int, int],
+    avoid_zones: list[tuple[int, int, int, int]] | None = None,
 ) -> None:
     """Floating coaching cue anchored to a point on the player.
 
     No box: a thin connector line from the anchor to a small text block
     (header in accent + body in white), with a soft drop shadow for
     legibility against any background. Alpha drives fade in / out.
+    `avoid_zones` lists rectangles the cue must not overlap (e.g. the
+    speed-readout area). Pass an empty list when no readout is rendered.
     """
     if alpha <= 0.01:
         return
     W, H = base.size
     ax, ay = anchor
 
-    header_font = _font(px(20), bold=True)
-    body_font = _font(px(34), bold=True)
+    # Scale font with output height so 1080p output isn't tiny.
+    header_font = _font(max(px(20), 22), bold=True)
+    body_font = _font(max(px(34), 38), bold=True)
+    body_lh = max(px(34), 38)
+    body_underline_gap = max(px(50), 54)
 
     measure = ImageDraw.Draw(base)
     tw = max(
         measure.textbbox((0, 0), header, font=header_font)[2],
         measure.textbbox((0, 0), body, font=body_font)[2],
     )
-    th = px(34) + px(46) + px(8)
+    th = body_lh + max(px(46), 50) + px(8)
     margin = px(40)
-    # Speed-readout no-fly zone (top-right corner). The cue must not start
-    # inside this rectangle.
-    speed_zone = (W - px(800), 0, W, px(300))
+    if avoid_zones is None:
+        # Backward-compat: protect the original top-right speed readout.
+        avoid_zones = [(W - px(800), 0, W, px(300))]
 
-    def intersects_speed(rx: int, ry: int) -> bool:
-        return not (
-            rx + tw <= speed_zone[0]
-            or rx >= speed_zone[2]
-            or ry + th <= speed_zone[1]
-            or ry >= speed_zone[3]
-        )
+    def intersects_zones(rx: int, ry: int) -> bool:
+        for z in avoid_zones:
+            if not (
+                rx + tw <= z[0]
+                or rx >= z[2]
+                or ry + th <= z[1]
+                or ry >= z[3]
+            ):
+                return True
+        return False
 
     def in_bounds(rx: int, ry: int) -> bool:
         return (
@@ -615,7 +644,7 @@ def draw_anchored_cue(
     for cx, cy in candidates:
         cx_c = max(margin, min(cx, W - tw - margin))
         cy_c = max(margin, min(cy, H - th - margin))
-        if in_bounds(cx_c, cy_c) and not intersects_speed(cx_c, cy_c):
+        if in_bounds(cx_c, cy_c) and not intersects_zones(cx_c, cy_c):
             tx, ty = cx_c, cy_c
             break
     else:
@@ -632,7 +661,7 @@ def draw_anchored_cue(
     shadow_mask = Image.new("L", base.size, 0)
     sm = ImageDraw.Draw(shadow_mask)
     sm.text((tx, ty), header, font=header_font, fill=255)
-    sm.text((tx, ty + px(34)), body, font=body_font, fill=255)
+    sm.text((tx, ty + body_lh), body, font=body_font, fill=255)
     shadow_mask = shadow_mask.filter(ImageFilter.GaussianBlur(px(12)))
     # Boost the blurred mask so the dark blob is solid where text sits.
     shadow_mask = shadow_mask.point(lambda v: min(255, int(v * 2.6)))
@@ -655,11 +684,12 @@ def draw_anchored_cue(
 
     # Text — header in orange, body in white.
     d.text((tx, ty), header, font=header_font, fill=(*ORANGE_RGB, 255))
-    d.text((tx, ty + px(34)), body, font=body_font, fill=(255, 255, 255, 250))
+    d.text((tx, ty + body_lh), body, font=body_font, fill=(255, 255, 255, 250))
 
     # Underline accent under the body.
     d.line(
-        (tx, ty + px(34) + px(50), tx + px(90), ty + px(34) + px(50)),
+        (tx, ty + body_lh + body_underline_gap,
+         tx + max(px(90), 96), ty + body_lh + body_underline_gap),
         fill=(*ORANGE_RGB, 230),
         width=max(2, px(3)),
     )
@@ -757,7 +787,10 @@ def draw_ball_trail(frame: np.ndarray, trail: list[tuple[float, float]]) -> None
 
 
 CUE_SCRIPTS: dict[str, list[tuple[float, str, str, float]]] = {
-    # (trigger_seconds, header, body, freeze_duration_seconds)
+    # (trigger_seconds, header, body, duration_seconds)
+    # For the original 4K clips this duration is a freeze hold; in beauty
+    # mode the same duration becomes a fade-in/hold/fade-out window over
+    # normal playback.
     "match": [
         (1.0, "FIRST TOUCH", "Soft control under pressure", 1.3),
         (5.0, "DRIVE", "Explode through the gap", 1.2),
@@ -770,6 +803,33 @@ CUE_SCRIPTS: dict[str, list[tuple[float, str, str, float]]] = {
         (8.0, "RHYTHM", "Find your tempo", 1.2),
         (11.2, "CONTROL", "Lock the ankle — eyes on the ball", 1.4),
     ],
+    "jumps": [
+        (1.2, "EXPLODE", "Drive through the hips", 2.4),
+        (4.0, "LAND", "Absorb soft through the knees", 1.8),
+    ],
+    "oneone": [
+        (0.5, "FEINT", "Drop the shoulder", 1.6),
+        (2.0, "BURST", "Accelerate past the line", 1.3),
+    ],
+    "game": [
+        (0.8, "SCAN", "Eyes up — read the run", 2.4),
+        (4.0, "PRESS", "Close the angle fast", 2.4),
+    ],
+    "prowess": [
+        (1.4, "POSTURE", "Tall through the chest", 2.6),
+        (6.0, "ANKLE", "Lock to lift clean", 2.6),
+        (10.8, "TEMPO", "Even rhythm, even height", 2.8),
+    ],
+    "female_juggle": [
+        (1.4, "BALANCE", "Stay over the ball", 2.6),
+        (7.0, "TOUCH", "Soft instep contact", 2.6),
+        (12.5, "BREATHE", "Stay relaxed, stay tall", 2.6),
+    ],
+    "juggle_skill": [
+        (1.2, "CONTROL", "Lock the ankle", 2.4),
+        (5.5, "RHYTHM", "Find the tempo", 2.6),
+        (9.5, "FOCUS", "Eyes on the ball", 2.6),
+    ],
 }
 
 
@@ -780,6 +840,27 @@ def cue_schedule(name: str, fps: float) -> list[dict]:
         {"at": int(t * fps), "header": h, "body": b, "duration": d}
         for (t, h, b, d) in script
     ]
+
+
+def floating_cues(
+    name: str, fps: float, n_frames: int
+) -> list[tuple[str, str, float] | None]:
+    """Per-frame table of (header, body, alpha) for non-pausing playback.
+
+    Each cue paints onto a window of `duration * fps` frames starting at
+    its trigger time, with a fade-in/hold/fade-out alpha envelope. The
+    video keeps playing — the cue rides on top.
+    """
+    script = CUE_SCRIPTS.get(name, [])
+    table: list[tuple[str, str, float] | None] = [None] * n_frames
+    for (t, h, b, d) in script:
+        start = int(t * fps)
+        total = max(2, int(d * fps))
+        for k in range(total):
+            i = start + k
+            if 0 <= i < n_frames and table[i] is None:
+                table[i] = (h, b, freeze_alpha(k, total))
+    return table
 
 
 def freeze_alpha(k: int, total: int) -> float:
@@ -806,6 +887,17 @@ def hero_anchor(s: dict, kp: np.ndarray | None) -> tuple[int, int]:
 
 
 def render(src: Path, dst: Path, name: str) -> None:
+    beauty = name in BEAUTY_KEYS
+
+    if beauty:
+        # Render at the source's native resolution so 1080p clips stay crisp.
+        probe = cv2.VideoCapture(str(src))
+        sw = int(probe.get(cv2.CAP_PROP_FRAME_WIDTH))
+        sh = int(probe.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        probe.release()
+        set_canvas(sw, sh)
+        print(f"  beauty canvas {OUT_W}x{OUT_H}  (S={S:.2f})")
+
     print(f"Detection pass on {src.name}…")
     frames, fps, n = detect_pass(src, (OUT_W, OUT_H))
 
@@ -817,17 +909,20 @@ def render(src: Path, dst: Path, name: str) -> None:
     print("Smoothing keypoints…")
     kps = smooth_keypoints(series)
 
-    use_juggles = name == "player_dribbling"
-    if use_juggles:
-        print("Counting juggles…")
-        juggle_counts, juggle_tempo = count_juggles(frames, fps)
-        print(f"  total juggles in clip: {juggle_counts[-1]}")
+    if beauty:
+        cue_table = floating_cues(name, fps, n)
     else:
-        print("Computing speed…")
-        speeds, peaks = smooth_speed(series, fps)
+        use_juggles = name == "player_dribbling"
+        if use_juggles:
+            print("Counting juggles…")
+            juggle_counts, juggle_tempo = count_juggles(frames, fps)
+            print(f"  total juggles in clip: {juggle_counts[-1]}")
+        else:
+            print("Computing speed…")
+            speeds, peaks = smooth_speed(series, fps)
 
-    cues = cue_schedule(name, fps)
-    cues_by_frame = {c["at"]: c for c in cues}
+        cues = cue_schedule(name, fps)
+        cues_by_frame = {c["at"]: c for c in cues}
 
     print("Compositing frames…")
     # Try H.264 first (broad browser support); fall back to mp4v.
@@ -857,10 +952,11 @@ def render(src: Path, dst: Path, name: str) -> None:
         if kps[src_i] is not None:
             draw_skeleton(f, kps[src_i])
         pil = Image.fromarray(cv2.cvtColor(f, cv2.COLOR_BGR2RGB)).convert("RGBA")
-        if use_juggles:
-            draw_juggle_readout(pil, juggle_counts[src_i], juggle_tempo[src_i])
-        else:
-            draw_speed_readout(pil, speeds[src_i], peaks[src_i])
+        if not beauty:
+            if use_juggles:
+                draw_juggle_readout(pil, juggle_counts[src_i], juggle_tempo[src_i])
+            else:
+                draw_speed_readout(pil, speeds[src_i], peaks[src_i])
         draw_brand(pil)
         return pil
 
@@ -876,24 +972,34 @@ def render(src: Path, dst: Path, name: str) -> None:
         frame = draw_vignette(frame)
 
         pil = base_pil(frame, i)
-        writer.write(pil_to_bgr(pil))
-        out_count += 1
 
-        # Freeze-and-cue: at trigger frames, hold this frame for `duration`
-        # seconds while the cue fades in/holds/out. Skip the cue (and the
-        # freeze) when the hero isn't confidently identified — we never
-        # want cues anchored to a defender or the keeper.
-        if i in cues_by_frame and series[i] is not None and kps[i] is not None:
-            cue = cues_by_frame[i]
-            freeze_total = max(2, int(cue["duration"] * fps))
-            anchor = hero_anchor(series[i], kps[i])
-            for k in range(freeze_total):
-                a = freeze_alpha(k, freeze_total)
-                cue_frame = pil.copy()
-                if a > 0:
-                    draw_anchored_cue(cue_frame, cue["header"], cue["body"], a, anchor)
-                writer.write(pil_to_bgr(cue_frame))
-                out_count += 1
+        if beauty:
+            cue = cue_table[i]
+            if cue is not None and series[i] is not None and kps[i] is not None:
+                header, body, alpha = cue
+                anchor = hero_anchor(series[i], kps[i])
+                draw_anchored_cue(pil, header, body, alpha, anchor, avoid_zones=[])
+            writer.write(pil_to_bgr(pil))
+            out_count += 1
+        else:
+            writer.write(pil_to_bgr(pil))
+            out_count += 1
+
+            # Freeze-and-cue: at trigger frames, hold this frame for `duration`
+            # seconds while the cue fades in/holds/out. Skip the cue (and the
+            # freeze) when the hero isn't confidently identified — we never
+            # want cues anchored to a defender or the keeper.
+            if i in cues_by_frame and series[i] is not None and kps[i] is not None:
+                cue = cues_by_frame[i]
+                freeze_total = max(2, int(cue["duration"] * fps))
+                anchor = hero_anchor(series[i], kps[i])
+                for k in range(freeze_total):
+                    a = freeze_alpha(k, freeze_total)
+                    cue_frame = pil.copy()
+                    if a > 0:
+                        draw_anchored_cue(cue_frame, cue["header"], cue["body"], a, anchor)
+                    writer.write(pil_to_bgr(cue_frame))
+                    out_count += 1
 
         if i % 25 == 0:
             print(f"  render src {i}/{n}  (out {out_count})")
